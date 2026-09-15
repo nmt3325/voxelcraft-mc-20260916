@@ -1,0 +1,92 @@
+{
+  "task": "sim-a",
+  "branch": "feat/mc-20260916/sim-a",
+  "status": "in_progress",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "72997a1295ad3aa0b06f083dd960f5e0d4b471b9",
+  "commits": [
+    "ae0f1346940ee5b7653b890d4786d05c3ef9f517 feat(sim): shared voxel world, block facts, event bus and sparse-set ECS",
+    "72997a1295ad3aa0b06f083dd960f5e0d4b471b9 feat(sim): fixed 20Hz scheduler, AABB physics, DDA raycast, locomotion, replay hashing"
+  ],
+  "files_changed": [
+    "packages/sim/src/index.ts",
+    "packages/sim/src/shared/index.ts",
+    "packages/sim/src/shared/blockProps.ts",
+    "packages/sim/src/shared/events.ts",
+    "packages/sim/src/shared/voxelWorld.ts",
+    "packages/sim/src/shared/math.ts",
+    "packages/sim/src/ecs/ecs.ts",
+    "packages/sim/src/ecs/components.ts",
+    "packages/sim/src/ecs/index.ts",
+    "packages/sim/src/ecs/ecs.test.ts",
+    "packages/sim/src/physics/aabb.ts",
+    "packages/sim/src/physics/move.ts",
+    "packages/sim/src/physics/raycast.ts",
+    "packages/sim/src/physics/locomotion.ts",
+    "packages/sim/src/physics/index.ts",
+    "packages/sim/src/physics/move.test.ts",
+    "packages/sim/src/physics/raycast.test.ts",
+    "packages/sim/src/physics/locomotion.test.ts",
+    "packages/sim/src/schedule/index.ts",
+    "packages/sim/src/schedule/schedule.test.ts",
+    "packages/sim/src/testing/flatWorld.ts",
+    "packages/sim/src/testing/index.ts",
+    "packages/sim/src/replay/index.ts",
+    "packages/sim/src/replay/replay.test.ts",
+    "packages/sim/src/light/index.ts",
+    "packages/sim/src/fluid/index.ts",
+    "packages/sim/src/mob/index.ts",
+    "packages/sim/src/pathfind/index.ts",
+    "packages/sim/src/combat/index.ts",
+    "docs/reports/sim-a.json"
+  ],
+  "checks": [
+    {
+      "name": "tsc",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "d14d6a747b4f4202",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/g1.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "d14d6a747b4f4202",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/g2.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "d14d6a747b4f4202",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/g3.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "d14d6a747b4f4202",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/g4.log"
+    },
+    {
+      "name": "sim-test",
+      "command": "pnpm --filter @voxelcraft/sim test",
+      "job_id": "540c8f27b7b64c30",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/sim-test4.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "49 vitest tests green in packages/sim (ecs 6, move 9, raycast 7, locomotion 14, schedule 7, replay 6): 1000-tick random-input non-penetration, resting stability, step 0.5/1.0/1.5, DDA invariants, reach 5.0 boundary and zero-component rays, FACE/normal agreement, fall-damage table, fixed 20Hz accumulator with the 250 ms clamp and SYSTEM_ORDER, replay determinism. | Deviation 1: voxels are unit cubes, so the 0.5/1.0/1.5 step acceptance is encoded as (a) auto-step succeeds iff stepHeight >= ledge height, so a 1-block ledge is stepped only with stepHeight 1.2 and is blocked with the contract 0.6, (b) a 1.0 ledge is climbable by jumping, (c) 1.5 and taller is not, verified with a 2-block wall. | Deviation 2: vertical integration moves with the velocity the tick starts with and applies gravity afterwards (Minecraft order), giving a discrete jump apex of 1.32 blocks against the analytic jumpVelocity^2/(2*gravity)=1.1025. Applying gravity before the move gives only 0.9 blocks, which would make a 1.0 ledge unclimbable by either stepping or jumping and would break the acceptance criterion. | Deviation 3: PHYSICS.maxSubSteps (8) is deliberately not a hard cap in moveEntity, because at terminal velocity a 50 ms step is 3.92 blocks while 8 * 0.45 = 3.6 would allow tunnelling; the sub-step count derives from maxSubStepBlocks only. | Deviation 4: simSin/simCos in src/shared/math.ts replace Math.sin/Math.cos because core-types/rng.ts forbids them in simulation. | Deviation 5: AIR_CONTROL = 0.2 is local tuning; the contract defines no mid-air control constant. | Deviation 6: moveEntity treats velocity as the per-step displacement in blocks, since the contract signature carries no dt; callers scale by dt. | ECS semantics: create() is immediate, add/remove/destroy are buffered while a query snapshot is live and applied by flush(), get/has/alive report the pre-flush state, freed ids are reused deterministically and query() returns ascending ids. | No contract changes needed; packages/core-types, docs/orchestration, CI and dependency declarations are untouched. | L2 status at this report: sim-b (light + fluid) and sim-c (mob, AI, pathfind, combat) sessions are running, both remote branches are still at ae0f134 with no commits; src/light, src/fluid, src/mob, src/pathfind and src/combat are placeholder index files owned by them. Next: merge --no-ff feat/mc-20260916/sim-b and sim-c into sim-a, re-run the four gates, then flip status to done."
+}
