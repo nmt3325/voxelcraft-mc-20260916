@@ -51,6 +51,12 @@ export interface PhysicsStateComp {
 	fallDistance: number
 	/** Damage from the last landing, consumed by the combat system. */
 	pendingFallDamage: number
+	/**
+	 * Highest feet height since the entity last touched the ground. Written by
+	 * the physics system and used for fall damage; optional so other subtrees
+	 * can build the component without knowing about it.
+	 */
+	fallStartY?: number
 }
 export const PhysicsState = defineComponent<PhysicsStateComp>('physicsState', () => ({
 	onGround: false,
@@ -59,6 +65,7 @@ export const PhysicsState = defineComponent<PhysicsStateComp>('physicsState', ()
 	steppedUp: false,
 	fallDistance: 0,
 	pendingFallDamage: 0,
+	fallStartY: 0,
 }))
 
 /** Movement wish for one tick. Produced by the input system or by mob AI. */
