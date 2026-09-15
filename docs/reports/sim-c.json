@@ -1,0 +1,94 @@
+{
+	"task": "sim-c",
+	"branch": "feat/mc-20260916/sim-c",
+	"status": "done",
+	"base_sha": "ae0f1346940ee5b7653b890d4786d05c3ef9f517",
+	"head_sha": "a3c1813d22e1f7d7377232dbc29a9c103f91feef",
+	"commits": [
+		{
+			"sha": "c0d454eb77ec3fe19df1b4b96fffae3fe455892a",
+			"message": "feat(sim): mob defs, A* pathfinding, AI state machine, combat and projectiles"
+		},
+		{
+			"sha": "a3c1813d22e1f7d7377232dbc29a9c103f91feef",
+			"message": "test(sim): vitest suites for pathfinding, mob spawn, AI and combat"
+		}
+	],
+	"files_changed": [
+		"packages/sim/src/pathfind/moves.ts",
+		"packages/sim/src/pathfind/astar.ts",
+		"packages/sim/src/pathfind/astar.test.ts",
+		"packages/sim/src/pathfind/index.ts",
+		"packages/sim/src/mob/mobDefs.ts",
+		"packages/sim/src/mob/context.ts",
+		"packages/sim/src/mob/components.ts",
+		"packages/sim/src/mob/targets.ts",
+		"packages/sim/src/mob/spawn.ts",
+		"packages/sim/src/mob/ai.ts",
+		"packages/sim/src/mob/despawn.ts",
+		"packages/sim/src/mob/systems.ts",
+		"packages/sim/src/mob/index.ts",
+		"packages/sim/src/mob/spawn.test.ts",
+		"packages/sim/src/mob/ai.test.ts",
+		"packages/sim/src/combat/components.ts",
+		"packages/sim/src/combat/damage.ts",
+		"packages/sim/src/combat/projectile.ts",
+		"packages/sim/src/combat/index.ts",
+		"packages/sim/src/combat/combat.test.ts",
+		"packages/sim/src/combat/projectile.test.ts",
+		"docs/reports/sim-c.json"
+	],
+	"checks": [
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "5205810259f94cc3",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/sim-c-logs/check-tsc.log"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm -r lint",
+			"job_id": "d512ed127e364649",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/sim-c-logs/check-lint.log"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "b4a03d1111394575",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/sim-c-logs/check-test.log"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "871d14fa07ea4380",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/sim-c-logs/check-build.log"
+		}
+	],
+	"contract_changes_needed": [],
+	"notes": [
+		"Scope delivered: packages/sim/src/mob, packages/sim/src/pathfind, packages/sim/src/combat. Nothing outside those trees plus this report was touched; packages/core-types, docs/orchestration, every package.json, root config, CI, and the sim index/shared/ecs/schedule/physics/replay/testing trees are unchanged.",
+		"Systems are exported with the SystemFn signature (world, dt, tick) and map to SYSTEM_ORDER as mobSpawn=mobSpawnSystem, mobAi=mobAiSystem, combat=combatSystem, projectile=combatProjectileSystem, despawn=mobDespawnSystem. mobSimSystemEntries() in mob/systems.ts returns them as SystemEntry[] in that order, ready for sim-a to register; no scheduler wiring was done here.",
+		"Before any system runs, sim-a must call mobBindContext(world, { voxels, seed, bus }) from mob/context.ts. Systems never call world.flush() themselves, so the scheduler owns flushing, exactly like the other sim subtrees.",
+		"Physics boundary respected: AI only writes Intent (forward/strafe/jump/sprint), plus Velocity for knockback and arrow motion. Collision resolution and the movement integration are left to sim-a. ../physics, ../schedule and ../replay are never imported.",
+		"Steering is deliberately trig free: mobSteer keeps Intent.yaw at 0 and writes forward as the +Z axis and strafe as the +X axis, scaled by MobDef.speed / PHYSICS.walkSpeed. If the physics integration rotates Intent by Transform.yaw instead of treating it as world aligned, tell me and I will switch mobSteer to emit yaw-relative components; the change is local to mob/ai.ts.",
+		"Determinism: every random draw goes through core-types makeRng seeded with (worldSeed, MOB_RNG_SALT.*, tick, attempt). No Math.random, Date.now, or trig in state calculations. The single wall-clock read is the A* maxMillis budget (pathNow, sampled every 64 expansions), which can only change when a search gives up and reports status 'partial'; it never changes node ordering or costs. pathSetClock injects a deterministic clock for replay or tests.",
+		"Pathfinding: A* over PATH_DIRS (4 cardinal then 4 diagonal), octile heuristic, binary heap keyed (f, h, insertion) so ties break deterministically. Cut off by PATHFIND.maxNodes and PATHFIND.maxMillis with status 'partial' and the best-so-far route. Diagonals require both orthogonal neighbours to be passable, so corners cannot be cut. Unloaded chunks are passable at PATHFIND.unloadedPenalty rather than solid. Costs come only from MOVE_COST. pathDijkstra shares the same expansion with a zero heuristic and is used by the optimality test.",
+		"Mobs: 4 passive (pig, cow, sheep, chicken) and 4 hostile (zombie, skeleton, creeper, spider) mapped to core-types MOB. Spawning honours spawnMaxBlockLight, minDistance, maxDistance, mobCapHostile, mobCapPassive and attemptsPerTick; despawn uses despawnDistance. Combat honours invulnerableTicks, playerMaxHealth, regenIntervalTicks, creeperFuseTicks, creeperRadius, creeperDamage, arrowDamage, arrowSpeed and arrowGravity, with knockback added to Velocity from PHYSICS.knockbackHorizontal and knockbackVertical.",
+		"Local tuning constants live beside the code they serve and never shadow a contract value: PATH_JUMP_BLOCKS, PATH_SAFE_FALL_BLOCKS (pathfind/moves.ts), MOB_WAYPOINT_RADIUS, MOB_WANDER_TICKS, MOB_WANDER_ODDS, MOB_FLEE_TICKS (mob/ai.ts), MOB_SPAWN_SURFACE_SCAN, MOB_SPAWN_VERTICAL_SPAN, MOB_SPAWN_GROUP_SPREAD, MOB_SPAWN_HOSTILE_ODDS (mob/spawn.ts) and COMBAT_ARROW_LIFE_TICKS (combat/projectile.ts). Move any of these into the contract if another package needs to agree on them.",
+		"Tests: 33 vitest cases in 5 files covering A* optimality against Dijkstra in a fixed maze, the node-budget cutoff returning 'partial', the diagonal corner rule, unloaded ground being expensive rather than impassable, light-gated and deterministic spawning, both mob caps, despawn distance, chase acquisition with chaseStartDistance/chaseStopDistance hysteresis and PATHFIND.repathTicks, melee damage and cooldown, the creeper fuse and explosion, skeleton arrow cadence, passive flee on damage, the invulnerability window, knockback magnitudes, death events, player regen, fall-damage handoff, and arrow ballistics including a wall stop.",
+		"head_sha is the commit the four checks were run against. This report is committed on top of it as the branch tip, which changes nothing under packages/.",
+		"Check logs were written to /tmp/sim-c-logs/ inside the runner env rather than the repo, because a logs/ directory is outside my owned paths. Use the job_id values above to re-read the captured output."
+	]
+}
