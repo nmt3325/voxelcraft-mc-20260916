@@ -101,15 +101,22 @@ describe('perlin2', () => {
   it('moves when the seed or the salt changes', () => {
     let seedDiffs = 0
     let saltDiffs = 0
-    for (let i = 0; i < 256; i++) {
-      const x = i * 0.73 + 0.31
-      const z = i * -1.21 + 0.17
+    const samples = 256
+    for (let i = 0; i < samples; i++) {
+      // Dyadic steps keep every sample strictly off the integer lattice:
+      // 0.75i + 0.3125 cycles through .3125/.0625/.8125/.5625 and never hits
+      // a whole number. That matters because on a lattice line one fade weight
+      // is 0, so the sample collapses onto what a single gradient component
+      // can produce and two seeds can tie there for reasons that say nothing
+      // about seeding. Strictly off the lattice, every sample must move.
+      const x = i * 0.75 + 0.3125
+      const z = i * -1.25 + 0.1875
       const base = perlin2(SEED, SALT.continent, x, z)
       if (perlin2(ALT_SEED, SALT.continent, x, z) !== base) seedDiffs++
       if (perlin2(SEED, SALT.erosion, x, z) !== base) saltDiffs++
     }
-    expect(seedDiffs).toBeGreaterThan(250)
-    expect(saltDiffs).toBeGreaterThan(250)
+    expect(seedDiffs).toBe(samples)
+    expect(saltDiffs).toBe(samples)
   })
 
   it('returns 0 instead of NaN for non-finite coordinates', () => {
@@ -435,7 +442,10 @@ describe('climateAt', () => {
       if (JSON.stringify(climateAt(ALT_SEED, x, z)) !== again) seedDiffs++
     }
     expect(mismatches).toBe(0)
-    expect(seedDiffs).toBeGreaterThan(195)
+    // Every sampled column moves with the seed. The four climate fields are
+    // independent fBm stacks, so a tie across all four at one point would mean
+    // the seed is not reaching them, not a gradient coincidence.
+    expect(seedDiffs).toBe(points.length)
   })
 
   it('samples temperature and humidity unwarped, from the contract fields', () => {
