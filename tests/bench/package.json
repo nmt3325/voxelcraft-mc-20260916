@@ -1,0 +1,18 @@
+{
+  "name": "@voxelcraft/bench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bench": "tsx src/bench.ts",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@voxelcraft/core-types": "workspace:*",
+    "@voxelcraft/world": "workspace:*",
+    "@voxelcraft/sim": "workspace:*",
+    "@voxelcraft/gameplay": "workspace:*"
+  }
+}

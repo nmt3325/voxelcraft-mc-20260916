@@ -1,0 +1,22 @@
+{
+  "name": "@voxelcraft/game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@voxelcraft/core-types": "workspace:*",
+    "@voxelcraft/world": "workspace:*",
+    "@voxelcraft/sim": "workspace:*",
+    "@voxelcraft/gameplay": "workspace:*",
+    "@voxelcraft/client": "workspace:*",
+    "@voxelcraft/assets-gen": "workspace:*"
+  }
+}

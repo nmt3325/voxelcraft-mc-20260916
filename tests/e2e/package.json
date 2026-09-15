@@ -1,0 +1,12 @@
+{
+  "name": "@voxelcraft/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "playwright test",
+    "lint": "eslint .",
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc --noEmit"
+  }
+}
