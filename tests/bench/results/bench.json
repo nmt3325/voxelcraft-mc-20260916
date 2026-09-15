@@ -1,0 +1,6 @@
+{
+  "version": 0,
+  "scaffold": true,
+  "note": "Replaced by the real harness: chunk gen + meshing at render distance 8, and sim tick cost.",
+  "metrics": []
+}
