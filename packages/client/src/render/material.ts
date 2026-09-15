@@ -14,9 +14,11 @@ import { TINT_COUNT } from '../mesher/appearance'
  * - lane 6 carries `(skyLight << 4) | blockLight`
  * - lane 7 indexes the tint palette (grass, foliage, water, lava)
  *
- * `attribute` / `varying` / `gl_FragColor` are used deliberately: three injects
- * the GLSL3 compatibility defines, and `position` must not be redeclared
- * because three already declares it for `ShaderMaterial`.
+ * These materials ask for `THREE.GLSL3`, so three only injects the
+ * `#define attribute in` / `#define varying out|in` aliases: unlike its GLSL1
+ * upgrade path it declares no fragment output and no `gl_FragColor` alias, so
+ * the fragment shader declares `fragColor` itself. `position` must not be
+ * redeclared because three already declares it for `ShaderMaterial`.
  */
 
 const VERTEX_SHADER = /* glsl */ `
@@ -83,6 +85,8 @@ varying float vLayer;
 varying vec3 vColor;
 varying float vFogDepth;
 
+layout(location = 0) out vec4 fragColor;
+
 void main() {
 	vec4 texel = texture(uAtlas, vec3(vUv, vLayer));
 	#ifdef CUTOUT
@@ -99,7 +103,7 @@ void main() {
 	float alpha = texel.a;
 	#endif
 
-	gl_FragColor = vec4(color, alpha);
+	fragColor = vec4(color, alpha);
 }
 `
 

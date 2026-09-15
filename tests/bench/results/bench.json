@@ -1,7 +1,7 @@
 {
   "version": 1,
   "task": "client-c",
-  "generatedAt": "2026-09-15T18:23:56.551Z",
+  "generatedAt": "2026-09-15T18:46:49.801Z",
   "contractVersion": "1.0.0",
   "failFactor": 3,
   "meta": {
@@ -22,31 +22,31 @@
       }
     },
     "mesher": {
-      "source": "bench-fallback",
-      "version": "bench-fallback-1",
-      "fallbackUsed": true,
-      "reason": "@voxelcraft/client does not export meshSection, createEmptyPadded, setPaddedBlock, fillPaddedLight, countVisibleFaces yet"
+      "source": "client",
+      "version": "1",
+      "fallbackUsed": false,
+      "reason": null
     },
     "sample": {
       "chunksGenerated": 289,
       "chunksMeshed": 32,
       "sectionsMeshed": 160,
       "sectionsSkippedEmpty": 352,
-      "quadsEmitted": 80106,
+      "quadsEmitted": 65773,
       "tickEntities": 512,
       "ticks": 600
     },
     "totals": {
-      "chunkGenMs": 75.449,
-      "meshMs": 60.383,
-      "simTickMs": 40.11
+      "chunkGenMs": 84.443,
+      "meshMs": 125.083,
+      "simTickMs": 48.668
     }
   },
   "metrics": [
     {
       "name": "chunkGenAvgMs",
       "unit": "ms",
-      "value": 0.261,
+      "value": 0.292,
       "threshold": 6,
       "failThreshold": 18,
       "status": "ok"
@@ -54,7 +54,7 @@
     {
       "name": "chunkMeshAvgMs",
       "unit": "ms",
-      "value": 1.887,
+      "value": 3.909,
       "threshold": 12,
       "failThreshold": 36,
       "status": "ok"
@@ -62,7 +62,7 @@
     {
       "name": "simTickAvgMs",
       "unit": "ms",
-      "value": 0.067,
+      "value": 0.081,
       "threshold": 8,
       "failThreshold": 24,
       "status": "ok"
@@ -72,12 +72,10 @@
     {
       "name": "sectionMeshAvgMs",
       "unit": "ms",
-      "value": 0.377,
+      "value": 0.782,
       "budget": 1.5
     }
   ],
-  "warnings": [
-    "meshing measured with the bench fallback mesher: @voxelcraft/client does not export meshSection, createEmptyPadded, setPaddedBlock, fillPaddedLight, countVisibleFaces yet"
-  ],
+  "warnings": [],
   "failures": []
 }
