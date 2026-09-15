@@ -1,7 +1,7 @@
 {
   "version": 1,
   "task": "client-c",
-  "generatedAt": "2026-09-15T18:46:49.801Z",
+  "generatedAt": "2026-09-15T18:55:28.067Z",
   "contractVersion": "1.0.0",
   "failFactor": 3,
   "meta": {
@@ -37,16 +37,16 @@
       "ticks": 600
     },
     "totals": {
-      "chunkGenMs": 84.443,
-      "meshMs": 125.083,
-      "simTickMs": 48.668
+      "chunkGenMs": 78.46,
+      "meshMs": 105.597,
+      "simTickMs": 40.749
     }
   },
   "metrics": [
     {
       "name": "chunkGenAvgMs",
       "unit": "ms",
-      "value": 0.292,
+      "value": 0.271,
       "threshold": 6,
       "failThreshold": 18,
       "status": "ok"
@@ -54,7 +54,7 @@
     {
       "name": "chunkMeshAvgMs",
       "unit": "ms",
-      "value": 3.909,
+      "value": 3.3,
       "threshold": 12,
       "failThreshold": 36,
       "status": "ok"
@@ -62,7 +62,7 @@
     {
       "name": "simTickAvgMs",
       "unit": "ms",
-      "value": 0.081,
+      "value": 0.068,
       "threshold": 8,
       "failThreshold": 24,
       "status": "ok"
@@ -72,7 +72,7 @@
     {
       "name": "sectionMeshAvgMs",
       "unit": "ms",
-      "value": 0.782,
+      "value": 0.66,
       "budget": 1.5
     }
   ],
