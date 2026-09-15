@@ -11,3 +11,7 @@ export * from './support'
 export * from './inventory'
 // Recipe registry, shaped/shapeless crafting and furnace smelting.
 export * from './crafting'
+// Chunk codec, world stores (IndexedDB / memory / fs) and batched writes.
+export * from './persistence'
+// Redstone wire propagation, inputs, doors, lamps and pistons.
+export * from './redstone'
