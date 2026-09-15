@@ -14,7 +14,8 @@
   "scripts": {
     "lint": "eslint .",
     "test": "vitest run --passWithNoTests",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "golden:update": "tsx scripts/update-golden.ts"
   },
   "dependencies": {
     "@voxelcraft/core-types": "workspace:*"
