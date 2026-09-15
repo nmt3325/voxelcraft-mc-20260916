@@ -10,6 +10,9 @@
  * A vein that cannot possibly reach the target chunk is skipped, but its random
  * draws are still consumed, so pruning is exactly output preserving: nextInt
  * takes one nextU32 per call, so veinSize raw draws replace veinSize steps.
+ * The reach test is the Manhattan distance to the chunk, because a step moves
+ * exactly one axis by one voxel, and the last write happens after veinSize - 1
+ * steps.
  *
  * The starting Y of a vein comes from a triangular distribution peaking at
  * OreDef.peakY, so diamond stays deep while coal spreads up towards the
@@ -72,18 +75,22 @@ function placeVeinsOf(
 	blocks: Uint16Array,
 ): void {
 	const rng = makeRng(seed, SALT.ore, oreIndex, ncx, ncz)
-	// A vein moves at most one voxel per step, so this window bounds its reach.
-	const reach = ore.veinSize
-	const minX = cx * CHUNK_X - reach
-	const maxX = cx * CHUNK_X + CHUNK_X - 1 + reach
-	const minZ = cz * CHUNK_Z - reach
-	const maxZ = cz * CHUNK_Z + CHUNK_Z - 1 + reach
+	const minX = cx * CHUNK_X
+	const maxX = minX + CHUNK_X - 1
+	const minZ = cz * CHUNK_Z
+	const maxZ = minZ + CHUNK_Z - 1
+	// A vein writes before it steps, so the furthest write is veinSize - 1 away.
+	const reach = ore.veinSize - 1
+	const loY = ore.minY
+	const hiY = ore.maxY
 	for (let attempt = 0; attempt < ore.attemptsPerChunk; attempt++) {
 		let vx = ncx * CHUNK_X + rng.nextInt(CHUNK_X)
 		let vz = ncz * CHUNK_Z + rng.nextInt(CHUNK_Z)
 		const t = (rng.next01() + rng.next01()) * 0.5
 		let vy = Math.round(veinStartY(ore, t))
-		if (vx < minX || vx > maxX || vz < minZ || vz > maxZ) {
+		const awayX = vx < minX ? minX - vx : vx > maxX ? vx - maxX : 0
+		const awayZ = vz < minZ ? minZ - vz : vz > maxZ ? vz - maxZ : 0
+		if (awayX + awayZ > reach) {
 			for (let n = 0; n < ore.veinSize; n++) rng.nextU32()
 			continue
 		}
@@ -106,8 +113,8 @@ function placeVeinsOf(
 			vx += STEPS[s]
 			vy += STEPS[s + 1]
 			vz += STEPS[s + 2]
-			if (vy < ore.minY) vy = ore.minY
-			if (vy > ore.maxY) vy = ore.maxY
+			if (vy < loY) vy = loY
+			if (vy > hiY) vy = hiY
 		}
 	}
 }
