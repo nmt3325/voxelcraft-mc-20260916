@@ -1,13 +1,18 @@
-import { mkdirSync, writeFileSync } from 'node:fs'
+/**
+ * Regenerates every asset into packages/assets-gen/generated.
+ * Deterministic: running it twice produces byte identical files.
+ */
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { ASSET_OUTPUT_DIR, writeAllAssets } from './write'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const outDir = resolve(here, '..', 'generated')
+const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const outDir = resolve(packageRoot, ASSET_OUTPUT_DIR)
+const result = writeAllAssets(outDir)
 
-mkdirSync(outDir, { recursive: true })
-writeFileSync(
-  resolve(outDir, 'manifest.json'),
-  JSON.stringify({ version: 0, generatedAt: new Date(0).toISOString(), assets: [] }, null, 2),
+console.log(
+  `assets-gen: ${result.textureCount} textures, ${result.soundCount} sounds -> ${result.outDir}`,
 )
-console.log('[assets-gen] scaffold manifest written to', outDir)
+console.log(
+  `assets-gen: atlas.png ${result.atlasPngBytes} bytes, ${result.files.length} files written`,
+)
