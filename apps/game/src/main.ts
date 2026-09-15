@@ -10,23 +10,35 @@ import {
 import {
 	VoxelRenderer,
 	appearanceOf,
+	createAudio,
 	createMesherPool,
-	loadAtlas,
-	type AtlasSource,
+	createUi,
+	fallbackAtlas,
+	type AudioHandle,
 	type MesherPool,
+	type UiDebugInfo,
+	type UiHandle,
+	type UiHost,
+	type UiScreen,
+	type UiSettings,
+	type UiWorldEntry,
 } from '@voxelcraft/client'
+import { loadGameAssets, type GameAssets } from './assets'
 import { raycastVoxels, type RaycastHit, type Vec3 } from './raycast'
-import { LocalWorld, SEA_LEVEL } from './world/localWorld'
+import { HOTBAR, buildSnapshot, hotbarBlockId } from './ui-bridge'
+import { LocalWorld } from './world/localWorld'
 import { DEFAULT_SETTINGS, createWorldStore, type WorldRecord } from './world/store'
 
 /**
- * Game entry point: world -> mesher pool -> renderer, plus input and saving.
+ * Game entry point: world -> mesher pool -> renderer, plus input, UI, audio and
+ * saving.
  *
- * The UI, audio and E2E suites are owned by the UI/QA subtree, so this file
- * only provides what they need: the `#ui-root` mount point, `EVENT`-based
- * notifications, and the `window.__vc` automation hooks.
+ * The UI and audio layers live in `@voxelcraft/client` (UI/QA subtree); this
+ * file owns the game state and adapts it into their contracts, and exposes the
+ * `window.__vc` automation hooks the E2E suite drives.
  */
 
+const DEFAULT_SEED = 20260916
 const PLAYER_HALF = 0.3
 const PLAYER_HEIGHT = 1.8
 const PLAYER_EYE = 1.62
@@ -37,33 +49,36 @@ const WALK_SPEED = 4.6
 const SPRINT_SPEED = 7.2
 const DAY_LENGTH_SECONDS = 600
 const AUTOSAVE_SECONDS = 15
+const UI_INTERVAL_SECONDS = 0.1
 const SECTIONS_PER_COLUMN = CHUNK_Y / SECTION_Y
 const VERTICAL_BAND = 3
 const REQUESTS_PER_FRAME = 3
 
-const HOTBAR: readonly number[] = [
-	BLOCK.STONE,
-	BLOCK.COBBLESTONE,
-	BLOCK.DIRT,
-	BLOCK.PLANKS,
-	BLOCK.GLASS,
-	BLOCK.SAND,
-	BLOCK.OAK_LOG,
-	BLOCK.TORCH,
-	BLOCK.BRICKS,
-]
-
-interface VcTestApi {
-	ready: boolean
-	whenReady: Promise<void>
+/** Mirrors `VcState` in tests/e2e/src/harness.ts. */
+interface VcState {
+	screen: string
 	seed: number
-	state(): Record<string, unknown>
+	worldId: string
+	x: number
+	y: number
+	z: number
+	chunks: number
+	quads: number
+	drawCalls: number
+	fps: number
+	tick: number
+	renderDistance: number
+}
+
+/** Mirrors `VcTestApi` in tests/e2e/src/harness.ts. */
+interface VcTestApi {
+	ready: Promise<void>
+	state(): VcState
 	getBlock(x: number, y: number, z: number): number
-	setBlock(x: number, y: number, z: number, id: number): boolean
-	breakBlock(target?: Vec3): Vec3 | null
-	placeBlock(id?: number, target?: Vec3): Vec3 | null
-	save(): string
-	hash(): string
+	breakBlock(x: number, y: number, z: number): void
+	placeBlock(x: number, y: number, z: number, id: number): void
+	save(): Promise<void>
+	hash(): number
 	errors: string[]
 }
 
@@ -93,14 +108,14 @@ function blocksMovement(id: number): boolean {
 	return appearance !== null && appearance.fullCube
 }
 
-/** Blocks the crosshair can target (includes plants and fluids' surface). */
+/** Blocks the crosshair can target. */
 function targetable(id: number): boolean {
 	if (id === BLOCK.AIR) return false
 	if (id === BLOCK.WATER || id === BLOCK.WATER_FLOWING) return false
 	return appearanceOf(id) !== null
 }
 
-function main(atlas: AtlasSource | null): void {
+function main(assets: GameAssets): void {
 	const params = queryParams()
 	const testMode = params.get('test') === '1'
 	const errors: string[] = []
@@ -110,10 +125,14 @@ function main(atlas: AtlasSource | null): void {
 		throw new Error('#game-canvas is missing')
 	}
 
+	// --- world and settings -------------------------------------------------
+
 	const store = createWorldStore()
-	const worldName = params.get('world') ?? 'default'
-	const saved = store.load(worldName)
-	const seed = numberParam(params, 'seed') ?? saved?.seed ?? 20260916
+	const requestedSeed = numberParam(params, 'seed')
+	const worldId =
+		params.get('world') ?? (testMode && requestedSeed !== null ? `e2e-${requestedSeed}` : 'default')
+	const saved = store.load(worldId)
+	const seed = requestedSeed ?? saved?.seed ?? DEFAULT_SEED
 	const world = new LocalWorld(seed)
 	if (saved !== null) world.applyEdits(saved.edits)
 
@@ -122,7 +141,9 @@ function main(atlas: AtlasSource | null): void {
 		...(saved?.settings ?? {}),
 		renderDistance:
 			numberParam(params, 'rd') ??
-			(testMode ? PERF.e2eRenderDistance : (saved?.settings.renderDistance ?? DEFAULT_SETTINGS.renderDistance)),
+			(testMode
+				? PERF.e2eRenderDistance
+				: (saved?.settings.renderDistance ?? DEFAULT_SETTINGS.renderDistance)),
 	}
 
 	const width = numberParam(params, 'w') ?? (testMode ? PERF.e2eCanvasWidth : window.innerWidth)
@@ -134,13 +155,18 @@ function main(atlas: AtlasSource | null): void {
 		height,
 		renderDistance: settings.renderDistance,
 		fov: settings.fov,
-		...(atlas !== null ? { atlas } : {}),
+		atlas: assets.atlas,
 	})
 	renderer.camera.rotation.order = 'YXZ'
 
 	// Workers are skipped under test so a worker load failure can never turn into
 	// a console error; meshing then happens inline on the main thread.
 	const pool: MesherPool = createMesherPool({ inline: testMode })
+	const audio: AudioHandle = createAudio({
+		manifest: assets.sounds,
+		baseUrl: './',
+		volume: settings.volume,
+	})
 
 	const spawnX = 8
 	const spawnZ = 8
@@ -158,18 +184,36 @@ function main(atlas: AtlasSource | null): void {
 	}
 
 	const requested = new Map<string, number>()
+	const keys = new Set<string>()
 	let needsSectionSync = true
 	let ready = false
+	let tick = 0
+	let screen: UiScreen = testMode ? 'playing' : 'title'
 	let resolveReady = (): void => {}
 	const whenReady = new Promise<void>((resolve) => {
 		resolveReady = resolve
 	})
 
+	const listWorlds = (): UiWorldEntry[] =>
+		store
+			.list()
+			.map((record) => ({
+				worldId: record.name,
+				name: record.name,
+				seed: record.seed,
+				lastPlayedAt: record.updatedAt,
+			}))
+			.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt)
+	let worlds: readonly UiWorldEntry[] = listWorlds()
+
 	const notify = (name: string, detail: Record<string, unknown>): void => {
 		window.dispatchEvent(new CustomEvent(name, { detail }))
 	}
 
-	const playSound = (sound: string): void => {
+	/** The UI uses dotted sound names; the generated manifest uses underscores. */
+	const playSound = (name: string): void => {
+		const sound = name.replace(/\./g, '_')
+		audio.play(sound)
 		notify(EVENT.SoundPlay, { sound })
 	}
 
@@ -195,8 +239,7 @@ function main(atlas: AtlasSource | null): void {
 						cx,
 						sy,
 						cz,
-						cost:
-							Math.abs(cx - centreX) + Math.abs(cz - centreZ) + Math.abs(sy - centreY) * 2,
+						cost: Math.abs(cx - centreX) + Math.abs(cz - centreZ) + Math.abs(sy - centreY) * 2,
 					})
 				}
 			}
@@ -216,7 +259,10 @@ function main(atlas: AtlasSource | null): void {
 			pool.request(request, (response) => {
 				if (response.type === 'mesh') {
 					renderer.enqueue(response.result)
-					notify(EVENT.ChunkMeshed, { key: response.result.key, quads: response.result.stats.quads })
+					notify(EVENT.ChunkMeshed, {
+						key: response.result.key,
+						quads: response.result.stats.quads,
+					})
 					return
 				}
 				if (response.type === 'error') {
@@ -230,6 +276,11 @@ function main(atlas: AtlasSource | null): void {
 
 	// --- editing ------------------------------------------------------------
 
+	const intersectsPlayer = (at: Vec3): boolean =>
+		at.x === Math.floor(player.x) &&
+		at.z === Math.floor(player.z) &&
+		(at.y === Math.floor(player.y) || at.y === Math.floor(player.y + PLAYER_HEIGHT - 0.01))
+
 	const pick = (): RaycastHit | null => {
 		const cosPitch = Math.cos(player.pitch)
 		const direction: Vec3 = {
@@ -241,41 +292,43 @@ function main(atlas: AtlasSource | null): void {
 		return raycastVoxels(eye, direction, REACH, (x, y, z) => targetable(world.blockAt(x, y, z)))
 	}
 
-	const applyEdit = (at: Vec3, id: number): boolean => {
+	const editAt = (at: Vec3, id: number): boolean => {
 		if (!world.setBlock(at.x, at.y, at.z, id)) return false
 		needsSectionSync = true
 		syncSections()
 		return true
 	}
 
-	const breakBlock = (target?: Vec3): Vec3 | null => {
-		const at = target ?? pick()?.block ?? null
-		if (at === null) return null
+	const breakAt = (x: number, y: number, z: number): boolean => {
+		const at: Vec3 = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) }
 		const previous = world.blockAt(at.x, at.y, at.z)
-		if (!applyEdit(at, BLOCK.AIR)) return null
+		if (previous === BLOCK.AIR || previous === BLOCK.BEDROCK) return false
+		if (!editAt(at, BLOCK.AIR)) return false
 		playSound(previous === BLOCK.OAK_LOG ? 'dig_wood' : 'dig_stone')
-		return at
+		return true
 	}
 
-	const placeBlock = (id?: number, target?: Vec3): Vec3 | null => {
-		const blockId = id ?? HOTBAR[player.hotbar] ?? BLOCK.STONE
-		const at = target ?? pick()?.place ?? null
-		if (at === null) return null
+	const placeAt = (x: number, y: number, z: number, id: number): boolean => {
+		const at: Vec3 = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) }
 		// Never seal the player inside a block.
-		if (blocksMovement(blockId) && intersectsPlayer(at)) return null
-		if (!applyEdit(at, blockId)) return null
+		if (blocksMovement(id) && intersectsPlayer(at)) return false
+		if (!editAt(at, id)) return false
 		playSound('place_generic')
-		return at
+		return true
 	}
 
-	const intersectsPlayer = (at: Vec3): boolean =>
-		at.x === Math.floor(player.x) &&
-		at.z === Math.floor(player.z) &&
-		(at.y === Math.floor(player.y) || at.y === Math.floor(player.y + PLAYER_HEIGHT - 0.01))
+	const breakTargeted = (): void => {
+		const hit = pick()
+		if (hit !== null) breakAt(hit.block.x, hit.block.y, hit.block.z)
+	}
+
+	const placeTargeted = (): void => {
+		const hit = pick()
+		if (hit !== null) placeAt(hit.place.x, hit.place.y, hit.place.z, hotbarBlockId(player.hotbar))
+	}
 
 	// --- movement -----------------------------------------------------------
 
-	const keys = new Set<string>()
 	const collides = (x: number, y: number, z: number): boolean => {
 		const minX = Math.floor(x - PLAYER_HALF)
 		const maxX = Math.floor(x + PLAYER_HALF)
@@ -345,10 +398,10 @@ function main(atlas: AtlasSource | null): void {
 
 	// --- persistence --------------------------------------------------------
 
-	const save = (): string => {
+	const saveWorld = (): void => {
 		const now = Date.now()
 		const record: WorldRecord = {
-			name: worldName,
+			name: worldId,
 			seed,
 			createdAt: saved?.createdAt ?? now,
 			updatedAt: now,
@@ -366,22 +419,156 @@ function main(atlas: AtlasSource | null): void {
 			settings,
 		}
 		store.save(record)
-		return world.stateHash()
+		worlds = listWorlds()
+	}
+
+	/** World switching reloads the page so every subsystem restarts cleanly. */
+	const gotoWorld = (name: string, worldSeed: number): void => {
+		const next = new URLSearchParams(window.location.search)
+		next.set('world', name)
+		next.set('seed', String(worldSeed))
+		window.location.search = next.toString()
+	}
+
+	// --- UI -----------------------------------------------------------------
+
+	const applySetting = (key: keyof UiSettings, value: number | boolean): void => {
+		if (key === 'showDebug') {
+			settings.showDebug = value === true
+			return
+		}
+		if (typeof value !== 'number' || !Number.isFinite(value)) return
+		if (key === 'renderDistance') {
+			settings.renderDistance = Math.max(
+				PERF.renderDistanceMin,
+				Math.min(PERF.renderDistanceMax, Math.round(value)),
+			)
+			renderer.setRenderDistance(settings.renderDistance)
+			needsSectionSync = true
+			return
+		}
+		if (key === 'fov') {
+			settings.fov = value
+			renderer.setFov(value)
+			return
+		}
+		if (key === 'sensitivity') {
+			settings.sensitivity = value
+			return
+		}
+		settings.volume = value
+		audio.setVolume(value)
+	}
+
+	const host: UiHost = {
+		onSelectHotbar(index: number): void {
+			if (index >= 0 && index < HOTBAR.length) player.hotbar = index
+		},
+		onToggleInventory(): void {
+			screen = screen === 'inventory' ? 'playing' : 'inventory'
+		},
+		onCloseScreen(): void {
+			if (screen === 'title') {
+				worlds = listWorlds()
+				screen = 'worldSelect'
+				return
+			}
+			if (screen === 'worldSelect') {
+				screen = 'title'
+				return
+			}
+			if (screen === 'settings') {
+				screen = 'pause'
+				return
+			}
+			screen = screen === 'playing' ? 'pause' : 'playing'
+		},
+		onResume(): void {
+			screen = 'playing'
+		},
+		onOpenSettings(): void {
+			screen = 'settings'
+		},
+		onChangeSetting(key: keyof UiSettings, value: number | boolean): void {
+			applySetting(key, value)
+		},
+		onCreateWorld(name: string, worldSeed: number): void {
+			gotoWorld(name, worldSeed)
+		},
+		onSelectWorld(id: string): void {
+			const record = store.load(id)
+			gotoWorld(id, record?.seed ?? seed)
+		},
+		onDeleteWorld(id: string): void {
+			store.remove(id)
+			worlds = listWorlds()
+		},
+		onSave(): void {
+			saveWorld()
+		},
+		onQuit(): void {
+			saveWorld()
+			screen = 'title'
+		},
+		onCraft(): void {
+			// Crafting recipes live in the gameplay subtree; nothing to apply yet.
+		},
+		onMoveStack(): void {
+			// The hotbar is fixed in this build, so stacks cannot move.
+		},
+		onPlaySound(name: string): void {
+			playSound(name)
+		},
+	}
+
+	const uiRoot = document.getElementById('ui-root')
+	const ui: UiHandle | null = uiRoot === null ? null : createUi(uiRoot, host)
+
+	const pushUi = (): void => {
+		if (ui === null) return
+		const stats = renderer.stats()
+		const debug: UiDebugInfo = {
+			fps: Math.round(stats.fps),
+			x: player.x,
+			y: player.y,
+			z: player.z,
+			yaw: player.yaw,
+			pitch: player.pitch,
+			biome: world.biomeAt(Math.floor(player.x), Math.floor(player.z)),
+			chunks: stats.sections,
+			drawCalls: stats.drawCalls,
+			quads: stats.quads,
+			triangles: stats.triangles,
+			renderDistance: renderer.getRenderDistance(),
+		}
+		ui.update(
+			buildSnapshot({
+				screen,
+				health: player.health,
+				hunger: player.hunger,
+				selectedSlot: player.hotbar,
+				debug,
+				settings,
+				worlds,
+			}),
+		)
 	}
 
 	// --- input --------------------------------------------------------------
+	// Hotbar digits, Escape, E and F3 are handled by the UI layer, which reports
+	// them through `host`; duplicating them here would cancel each toggle out.
 
 	canvas.addEventListener('click', () => {
-		if (testMode) return
+		if (testMode || screen !== 'playing') return
 		if (document.pointerLockElement !== canvas) {
 			void canvas.requestPointerLock()
 			return
 		}
-		breakBlock()
+		breakTargeted()
 	})
 	canvas.addEventListener('contextmenu', (event) => {
 		event.preventDefault()
-		if (!testMode) placeBlock()
+		if (!testMode && screen === 'playing') placeTargeted()
 	})
 	window.addEventListener('mousemove', (event) => {
 		if (document.pointerLockElement !== canvas) return
@@ -393,14 +580,6 @@ function main(atlas: AtlasSource | null): void {
 	})
 	window.addEventListener('keydown', (event) => {
 		keys.add(event.code)
-		if (event.code.startsWith('Digit')) {
-			const slot = Number(event.code.slice(5)) - 1
-			if (slot >= 0 && slot < HOTBAR.length) player.hotbar = slot
-		}
-		if (event.code === 'F3') {
-			settings.showDebug = !settings.showDebug
-			event.preventDefault()
-		}
 	})
 	window.addEventListener('keyup', (event) => {
 		keys.delete(event.code)
@@ -421,6 +600,7 @@ function main(atlas: AtlasSource | null): void {
 	let lastFrame = performance.now()
 	let sinceSave = 0
 	let sinceSync = 0
+	let sinceUi = 0
 	let elapsed = 0
 
 	const frame = (): void => {
@@ -430,8 +610,10 @@ function main(atlas: AtlasSource | null): void {
 		elapsed += dt
 		sinceSync += dt
 		sinceSave += dt
+		sinceUi += dt
+		tick += 1
 
-		if (!testMode) move(dt)
+		if (!testMode && screen === 'playing') move(dt)
 
 		if (needsSectionSync || sinceSync > 0.25) {
 			syncSections()
@@ -439,11 +621,12 @@ function main(atlas: AtlasSource | null): void {
 		}
 
 		if (testMode) {
+			// A fixed time of day keeps E2E screenshots deterministic.
 			renderer.setTimeOfDay(0.25)
 		} else {
 			renderer.setTimeOfDay(0.25 + elapsed / DAY_LENGTH_SECONDS)
 			if (sinceSave > AUTOSAVE_SECONDS) {
-				save()
+				saveWorld()
 				sinceSave = 0
 			}
 		}
@@ -457,11 +640,16 @@ function main(atlas: AtlasSource | null): void {
 
 		renderer.camera.position.set(player.x, player.y + PLAYER_EYE, player.z)
 		renderer.camera.rotation.set(player.pitch, player.yaw, 0)
+		renderer.flushUploads()
 		renderer.render(dt)
+
+		if (sinceUi > UI_INTERVAL_SECONDS) {
+			pushUi()
+			sinceUi = 0
+		}
 
 		if (!ready && renderer.stats().sections > 0) {
 			ready = true
-			api.ready = true
 			resolveReady()
 		}
 		requestAnimationFrame(frame)
@@ -470,68 +658,64 @@ function main(atlas: AtlasSource | null): void {
 	// --- automation hooks ---------------------------------------------------
 
 	const api: VcTestApi = {
-		ready: false,
-		whenReady,
-		seed,
-		state(): Record<string, unknown> {
+		ready: whenReady,
+		state(): VcState {
 			const stats = renderer.stats()
 			return {
+				screen,
+				seed,
+				worldId,
 				x: player.x,
 				y: player.y,
 				z: player.z,
-				yaw: player.yaw,
-				pitch: player.pitch,
-				health: player.health,
-				hunger: player.hunger,
-				hotbar: player.hotbar,
-				hotbarBlock: HOTBAR[player.hotbar],
-				biome: world.biomeAt(Math.floor(player.x), Math.floor(player.z)),
-				seaLevel: SEA_LEVEL,
-				seed,
-				renderDistance: renderer.getRenderDistance(),
-				underwater: renderer.isUnderwater(),
-				timeOfDay: renderer.getTimeOfDay(),
-				fps: stats.fps,
 				chunks: stats.sections,
-				visibleChunks: stats.visibleSections,
-				drawCalls: stats.drawCalls,
-				triangles: stats.triangles,
 				quads: stats.quads,
-				mesher: pool.stats(),
-				hash: world.stateHash(),
+				drawCalls: stats.drawCalls,
+				fps: stats.fps,
+				tick,
+				renderDistance: renderer.getRenderDistance(),
 			}
 		},
-		getBlock(x, y, z) {
+		getBlock(x: number, y: number, z: number): number {
 			return world.blockAt(Math.floor(x), Math.floor(y), Math.floor(z))
 		},
-		setBlock(x, y, z, id) {
-			return applyEdit({ x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) }, id)
+		breakBlock(x: number, y: number, z: number): void {
+			breakAt(x, y, z)
 		},
-		breakBlock,
-		placeBlock,
-		save,
-		hash: () => world.stateHash(),
+		placeBlock(x: number, y: number, z: number, id: number): void {
+			placeAt(x, y, z, id)
+		},
+		save(): Promise<void> {
+			saveWorld()
+			return Promise.resolve()
+		},
+		hash(): number {
+			return Number.parseInt(world.stateHash(), 16)
+		},
 		errors,
 	}
 	window.__vc = api
 
 	syncSections()
+	pushUi()
 	requestAnimationFrame(frame)
 }
 
 /**
- * Load the generated atlas before the first frame. If it is missing (assets not
- * built yet) the renderer keeps its procedural placeholder atlas, so the game
- * still boots and the E2E suite still sees a rendered world.
+ * Generated assets are optional: when `packages/assets-gen` has not run, the
+ * build flips `__VC_HAS_ASSETS__` off and the renderer keeps its procedural
+ * placeholder atlas, so the game still boots with no failed requests.
  */
-void loadAtlas('./')
-	.then((atlas) => {
-		main(atlas)
+void loadGameAssets('./')
+	.then((assets) => {
+		main(assets)
 		window.dispatchEvent(
-			new CustomEvent('voxelcraft.atlasReady', { detail: { generated: atlas.generated } }),
+			new CustomEvent('voxelcraft.assetsReady', {
+				detail: { generated: assets.atlas.generated, sounds: assets.sounds !== null },
+			}),
 		)
 	})
 	.catch((error: unknown) => {
-		console.warn('[voxelcraft] atlas unavailable, using fallback:', error)
-		main(null)
+		console.warn('[voxelcraft] asset loading failed, using fallbacks:', error)
+		main({ atlas: fallbackAtlas(), sounds: null })
 	})
