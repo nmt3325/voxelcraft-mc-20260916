@@ -1,0 +1,82 @@
+{
+  "task": "sim-b",
+  "branch": "feat/mc-20260916/sim-b",
+  "status": "done",
+  "base_sha": "d37070edbace814fbacfae5257cebd4a2111c4b3",
+  "head_sha": "a4e9bfac525fe75df4e56599faa3a5b757452cfa",
+  "commits": [
+    "4a0bdfd05bbecf800f150b07f6fa00a6c6315227 merge: take sim-a shared foundation (voxel world, ECS, scheduler, testing helpers)",
+    "a4e9bfac525fe75df4e56599faa3a5b757452cfa feat(sim): light propagation and fluid simulation"
+  ],
+  "files_changed": [
+    "packages/sim/src/light/lightEngine.ts",
+    "packages/sim/src/light/index.ts",
+    "packages/sim/src/light/light.test.ts",
+    "packages/sim/src/fluid/fluidEngine.ts",
+    "packages/sim/src/fluid/index.ts",
+    "packages/sim/src/fluid/fluid.test.ts",
+    "docs/reports/sim-b.json"
+  ],
+  "checks": [
+    {
+      "name": "tsc",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "d6b0808eeebb4b28",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "1be5442a04fa47d1",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-lint.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "77bf40f1521544d9",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-test.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "c8940ecfc2f348ca",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-build.log"
+    },
+    {
+      "name": "sim-package-test",
+      "command": "pnpm --filter @voxelcraft/sim test",
+      "job_id": "73cfe9861092475e",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/sim-test.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": [
+    "Light: sky and block BFS over the single (sky << 4) | block byte, MAX_LIGHT 15. skyPassThrough columns are seeded to 15 and the start height comes from the chunk heightmap; opacity, emission, skyPassThrough and skyFilter from LightProps are all honoured (water attenuates by opacity 2 plus skyFilter).",
+    "Light differential update: onBlockChanged runs the two-phase removal-propagation then re-propagation, so placing and breaking a block converges to the same state as a full recompute (asserted on a chunk border).",
+    "Cross-chunk: seam work is queued and stitchBoundaries(2) converges in two passes, which is what diagonal spread needs. A crossesSeam pre-check was added so one pass costs only live seams instead of every boundary column; this was the fix for the initial 5s vitest timeouts (no assertion had failed).",
+    "Light budget: step(budgetOps) never exceeds PERF.lightOpsPerTick (32768) and returns the ops spent; drainDirtySections reports each dirty section exactly once per drain.",
+    "Fluid: computeFluidAt is a side-effect-free read of the neighbourhood (decisions.md D-017), so there is no oscillation and no generation-order dependency. All writes happen inside tick(now, budgetCells) through the 33-bucket delay wheel (FLUID_TICKS water 5, lava 10, maxDelay 32) and never exceed PERF.fluidCellsPerTick (4096). Source self-duplication stays disabled.",
+    "Fluid interactions: water touching source lava produces OBSIDIAN, water touching flowing lava produces COBBLESTONE, falling columns drop straight down and only spread where they land, and removing a source drains the body again. The fluid layer never writes the light byte.",
+    "All numbers come from core-types (PERF, FLUID, FLUID_TICKS, FLUID_MAX_LEVEL, MAX_LIGHT, CHUNK_*); nothing is redefined locally. No Math.sin/cos, Math.random or Date.now: simSin/simCos and the core-types hash RNG only.",
+    "Tests: 21 new vitest cases inside packages/sim (light 10, fluid 11); pnpm -r test is 99 passed (core-types 29, sim 70) in about 15s. Light covers place, break, diagonal, cross-chunk corner, full-recompute equivalence on a border, budget and dirty sections, and the light slot after fluid in SYSTEM_ORDER. Fluid covers arena settling in finite ticks without oscillation, exactly seven levels of spread, falling water, draining, purity of computeFluidAt, fluid.changed payloads, both lava interactions, the cell budget and the fluid slot before light.",
+    "Light test fixtures use FLOOR_TOP 200, EXTENT 8 (seam tests 16) and explicit 20s per-test timeouts instead of a vitest config file, because packages/sim/vitest.config.ts is outside the paths this task owns.",
+    "Wiring into packages/sim/src/index.ts is intentionally NOT done here: that file belongs to sim-a and will be wired at merge time. The public API is exported only from packages/sim/src/light/index.ts and packages/sim/src/fluid/index.ts.",
+    "Handover: the previous sim-b session left no commits of its own; its working tree was rescued as d37070e with fluidEngine.ts truncated mid-file, which this session completed. origin/feat/mc-20260916/sim-a (1d15086) was merged with --no-ff at 4a0bdfd before implementation, so the shared voxel world, block facts, event bus, ECS, scheduler and test helpers are reused rather than reimplemented.",
+    "head_sha is the commit the four gates were run on; this report commit sits directly on top of it on the same branch."
+  ]
+}
