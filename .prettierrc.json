@@ -4,5 +4,11 @@
 	"singleQuote": true,
 	"printWidth": 100,
 	"trailingComma": "all",
-	"arrowParens": "always"
+	"arrowParens": "always",
+	"overrides": [
+		{
+			"files": ["*.json", "*.md", "*.yml", "*.yaml", "*.html"],
+			"options": { "useTabs": false }
+		}
+	]
 }
