@@ -1,3 +1,4 @@
-// fluid subtree barrel. Owned by the assigned L2 agent.
-// Public symbols MUST be prefixed to stay collision free under `export *`.
-export {}
+// fluid subtree barrel. Started by the sim-b L2 session and completed by sim-a
+// after that session died; public symbols stay prefixed (`fluid*`, `FLUID_*`)
+// so the package barrel keeps working with `export *`.
+export * from './fluidEngine'

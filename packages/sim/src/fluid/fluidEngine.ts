@@ -38,6 +38,7 @@ import {
 	FLUID_TICKS,
 	OPPOSITE_FACE,
 	PERF,
+	blockIndex,
 	packFluid,
 } from '@voxelcraft/core-types'
 import type {
@@ -195,3 +196,188 @@ export function fluidCreateEngine(options: FluidEngineOptions): FluidEngineInsta
 		if (bestKind === FLUID.None) return emptyState()
 		return { kind: bestKind, level: bestLevel, falling: false }
 	}
+
+	const keyOf = (x: number, y: number, z: number): string => `${x},${y},${z}`
+
+	const bucketIndex = (at: number): number =>
+		((at % FLUID_TICKS.buckets) + FLUID_TICKS.buckets) % FLUID_TICKS.buckets
+
+	/** Delay implied by the fluid a voxel holds. Empty cells behave like water. */
+	const delayAt = (x: number, y: number, z: number): number =>
+		world.fluidStateAt(x, y, z).kind === FLUID.Lava ? FLUID_TICKS.lava : FLUID_TICKS.water
+
+	/**
+	 * Enqueues one voxel into the delay ring. The delay is clamped to
+	 * `FLUID_TICKS.maxDelay`, which is strictly below `FLUID_TICKS.buckets`, so a
+	 * voxel scheduled while its own bucket is being drained always lands in a
+	 * later bucket and can never be processed twice within one tick.
+	 */
+	const schedule = (x: number, y: number, z: number, delay: number): void => {
+		if (!inColumn(y)) return
+		const clamped = Math.max(1, Math.min(FLUID_TICKS.maxDelay, Math.floor(delay)))
+		const index = bucketIndex(currentTick + clamped)
+		const key = keyOf(x, y, z)
+		if (scheduled[index].has(key)) return
+		scheduled[index].add(key)
+		buckets[index].push(x, y, z)
+	}
+
+	/** Contract entry point: re-evaluate this voxel and its 6 face neighbours. */
+	const onNeighborChanged = (x: number, y: number, z: number): void => {
+		schedule(x, y, z, delayAt(x, y, z))
+		for (const dir of FACE_DIRS) {
+			const nx = x + dir.x
+			const ny = y + dir.y
+			const nz = z + dir.z
+			schedule(nx, ny, nz, delayAt(nx, ny, nz))
+		}
+	}
+
+	/**
+	 * Water meeting lava turns the lava into stone: a source becomes obsidian, a
+	 * flowing voxel becomes cobblestone. This is a lookup only, the block edit is
+	 * applied by `tick`, which keeps `computeFluidAt` pure.
+	 */
+	const interactionAt = (x: number, y: number, z: number): BlockId | null => {
+		const here = world.fluidStateAt(x, y, z)
+		if (here.kind !== FLUID.Lava) return null
+		for (const dir of FACE_DIRS) {
+			if (world.fluidStateAt(x + dir.x, y + dir.y, z + dir.z).kind !== FLUID.Water) continue
+			return here.level === 0 && !here.falling ? BLOCK.OBSIDIAN : BLOCK.COBBLESTONE
+		}
+		return null
+	}
+
+	/** Brings one voxel to the state `computeFluidAt` prescribes for it. */
+	const applyCell = (x: number, y: number, z: number): void => {
+		if (!inColumn(y)) return
+		const solidified = interactionAt(x, y, z)
+		if (solidified !== null) {
+			const before = world.getBlock(x, y, z)
+			world.setFluid(x, y, z, FLUID_EMPTY)
+			world.setBlock(x, y, z, solidified)
+			events?.emit(EVENT.FluidChanged, { x, y, z, packed: FLUID_EMPTY })
+			events?.emit(EVENT.BlockChanged, { x, y, z, before, after: solidified })
+			onNeighborChanged(x, y, z)
+			return
+		}
+		const current = world.fluidStateAt(x, y, z)
+		const next = computeFluidAt(x, y, z)
+		const same =
+			next.kind === current.kind &&
+			next.level === current.level &&
+			next.falling === current.falling
+		if (same) return
+		if (next.kind === FLUID.None) {
+			const id = world.getBlock(x, y, z)
+			if (id === BLOCK.WATER_FLOWING || id === BLOCK.LAVA_FLOWING) {
+				world.setBlock(x, y, z, BLOCK.AIR)
+			}
+			world.setFluid(x, y, z, FLUID_EMPTY)
+			events?.emit(EVENT.FluidChanged, { x, y, z, packed: FLUID_EMPTY })
+		} else {
+			const packed = packFluid(next)
+			world.setFluid(x, y, z, packed)
+			events?.emit(EVENT.FluidChanged, { x, y, z, packed })
+		}
+		onNeighborChanged(x, y, z)
+	}
+
+	const pendingCount = (): number => {
+		let total = carry.length
+		for (const bucket of buckets) total += bucket.length
+		return total / 3
+	}
+
+	/**
+	 * Processes the voxels due at `now`, carry over first. Leftovers keep their
+	 * order and move to the next tick, so the budget only changes how many ticks
+	 * the simulation needs, never the state it converges to.
+	 */
+	const tick = (now: Tick, budgetCells: number): number => {
+		currentTick = now
+		const budget = Math.max(0, Math.floor(budgetCells))
+		if (budget === 0) return 0
+		const index = bucketIndex(now)
+		const due = carry.concat(buckets[index])
+		carry = []
+		buckets[index] = []
+		scheduled[index].clear()
+		let processed = 0
+		let cursor = 0
+		while (cursor < due.length && processed < budget) {
+			applyCell(due[cursor], due[cursor + 1], due[cursor + 2])
+			cursor += 3
+			processed++
+		}
+		if (cursor < due.length) carry = due.slice(cursor)
+		return processed
+	}
+
+	/** Schedules every fluid bearing voxel, and its neighbours, of every chunk. */
+	const scheduleAll = (): void => {
+		for (const chunk of world.orderedChunks()) {
+			const baseX = chunk.cx * CHUNK_X
+			const baseZ = chunk.cz * CHUNK_Z
+			for (let lz = 0; lz < CHUNK_Z; lz++) {
+				for (let lx = 0; lx < CHUNK_X; lx++) {
+					for (let y = 0; y < CHUNK_Y; y++) {
+						const at = blockIndex(lx, y, lz)
+						if (
+							chunk.fluids[at] === FLUID_EMPTY &&
+							fluidSourceKindOf(chunk.blocks[at]) === FLUID.None
+						) {
+							continue
+						}
+						onNeighborChanged(baseX + lx, y, baseZ + lz)
+					}
+				}
+			}
+		}
+	}
+
+	const settle = (
+		startTick: Tick = 0,
+		maxTicks: number = 4096,
+		budgetCells: number = PERF.fluidCellsPerTick,
+	): number => {
+		let ticks = 0
+		let at = startTick
+		while (ticks < maxTicks && pendingCount() > 0) {
+			tick(at, budgetCells)
+			at++
+			ticks++
+		}
+		return ticks
+	}
+
+	return {
+		onNeighborChanged,
+		computeFluidAt,
+		tick,
+		settle,
+		interactionAt,
+		scheduleAll,
+		get pending(): number {
+			return pendingCount()
+		},
+	}
+}
+
+/** `SystemFn` spending one tick of the fluid budget. Registered by sim-a. */
+export function fluidCreateSystem(
+	engine: FluidEngine,
+	budgetCells: number = PERF.fluidCellsPerTick,
+): SystemFn {
+	return (_world, _dt, now) => {
+		engine.tick(now, budgetCells)
+	}
+}
+
+/** Entry for the `fluid` slot of the contract's `SYSTEM_ORDER`. */
+export function fluidSystemEntry(
+	engine: FluidEngine,
+	budgetCells: number = PERF.fluidCellsPerTick,
+): SystemEntry {
+	return { name: FLUID_SYSTEM_NAME, fn: fluidCreateSystem(engine, budgetCells) }
+}
