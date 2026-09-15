@@ -16,5 +16,8 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {"@voxelcraft/core-types": "workspace:*"}
+  "dependencies": {
+    "@voxelcraft/core-types": "workspace:*",
+    "@voxelcraft/world": "workspace:*"
+  }
 }

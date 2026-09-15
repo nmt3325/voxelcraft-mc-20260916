@@ -16,5 +16,11 @@
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },
-  "dependencies": {"@voxelcraft/core-types": "workspace:*", "@voxelcraft/world": "workspace:*", "@voxelcraft/sim": "workspace:*", "@voxelcraft/gameplay": "workspace:*", "@voxelcraft/assets-gen": "workspace:*"}
+  "dependencies": {
+    "@voxelcraft/core-types": "workspace:*",
+    "@voxelcraft/world": "workspace:*",
+    "@voxelcraft/sim": "workspace:*",
+    "@voxelcraft/gameplay": "workspace:*",
+    "@voxelcraft/assets-gen": "workspace:*"
+  }
 }

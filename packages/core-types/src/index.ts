@@ -1,8 +1,25 @@
 /**
- * VoxelCraft shared contract (owned by L0).
- *
- * The full contract (blocks, items, recipes, chunk serialization, events, mobs,
- * module APIs, performance budgets) lands in the CONTRACT commit. Children must
- * not edit this package; report `contract_changes_needed` instead.
+ * VoxelCraft shared contract. Owned by L0 only.
+ * Children must report `contract_changes_needed` instead of editing this package.
  */
-export const CONTRACT_VERSION = '0.0.0-scaffold'
+export const CONTRACT_VERSION = '1.0.0'
+
+export * from './ids'
+export * from './chunk'
+export * from './blockEntity'
+export * from './blocks'
+export * from './items'
+export * from './recipes'
+export * from './light'
+export * from './fluid'
+export * from './world'
+export * from './mesh'
+export * from './ecs'
+export * from './physics'
+export * from './pathfind'
+export * from './mob'
+export * from './redstone'
+export * from './events'
+export * from './persistence'
+export * from './perf'
+export * from './rng'

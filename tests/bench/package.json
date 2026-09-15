@@ -13,6 +13,7 @@
     "@voxelcraft/core-types": "workspace:*",
     "@voxelcraft/world": "workspace:*",
     "@voxelcraft/sim": "workspace:*",
-    "@voxelcraft/gameplay": "workspace:*"
+    "@voxelcraft/gameplay": "workspace:*",
+    "@voxelcraft/client": "workspace:*"
   }
 }

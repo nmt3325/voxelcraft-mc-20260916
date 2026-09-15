@@ -106,12 +106,21 @@ importers:
       '@voxelcraft/core-types':
         specifier: workspace:*
         version: link:../core-types
+      '@voxelcraft/sim':
+        specifier: workspace:*
+        version: link:../sim
+      '@voxelcraft/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/sim:
     dependencies:
       '@voxelcraft/core-types':
         specifier: workspace:*
         version: link:../core-types
+      '@voxelcraft/world':
+        specifier: workspace:*
+        version: link:../world
 
   packages/world:
     dependencies:
@@ -121,6 +130,9 @@ importers:
 
   tests/bench:
     dependencies:
+      '@voxelcraft/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@voxelcraft/core-types':
         specifier: workspace:*
         version: link:../../packages/core-types
@@ -134,7 +146,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/world
 
-  tests/e2e: {}
+  tests/e2e:
+    dependencies:
+      '@voxelcraft/core-types':
+        specifier: workspace:*
+        version: link:../../packages/core-types
 
 packages:
 
