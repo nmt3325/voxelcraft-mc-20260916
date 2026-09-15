@@ -491,18 +491,26 @@ describe('createNoiseBasis', () => {
     for (let i = 0; i < 500; i++) warm.perlin2(SALT.detail, i * 0.5, i * -0.25)
     const fresh = createNoiseBasis(SEED)
     const other = createNoiseBasis(ALT_SEED)
+    const samples = 200
     let mismatches = 0
     let seedDiffs = 0
-    for (let i = 0; i < 200; i++) {
-      const x = i * 6.3 - 400.1
-      const z = i * -4.7 + 260.3
+    for (let i = 0; i < samples; i++) {
+      /*
+       * Both coordinates stay strictly off the lattice: x lands on .25 or .75
+       * and z on .375 or .875, never on an integer. That is what makes the
+       * seed assertion below exact. On a lattice line one fade weight is 0, so
+       * the sample collapses onto the few values a single gradient component
+       * can produce and two seeds tie there a few percent of the time, for
+       * reasons that say nothing about seeding. Off the lattice all four cell
+       * gradients contribute and the seed has to move every single sample.
+       */
+      const x = i * 6.5 + 0.25
+      const z = i * -4.5 + 0.375
       if (warm.perlin2(SALT.continent, x, z) !== fresh.perlin2(SALT.continent, x, z)) mismatches++
       if (other.perlin2(SALT.continent, x, z) !== fresh.perlin2(SALT.continent, x, z)) seedDiffs++
     }
     expect(mismatches).toBe(0)
-    // A few exact ties across seeds are expected: the gradient table has only
-    // 8 entries, so two seeds can pick the same gradient pair for a point.
-    expect(seedDiffs).toBeGreaterThan(190)
+    expect(seedDiffs).toBe(samples)
   })
 })
 
