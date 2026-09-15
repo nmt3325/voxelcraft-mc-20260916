@@ -9,7 +9,12 @@ import {
   type VcTestApi,
 } from '../src/harness'
 
-type WindowWithVc = Window & { __vc: VcTestApi }
+type WindowWithVc = { __vc: VcTestApi }
+
+/** window.__vc is injected by apps/game only in test mode, so it is not on the Window type. */
+function vcOf(scope: Window & typeof globalThis): VcTestApi {
+  return (scope as unknown as WindowWithVc).__vc
+}
 
 interface BlockPos {
   x: number
@@ -31,10 +36,13 @@ test.describe('deterministic world persistence', () => {
     const hasTestApi = await waitForTestApi(page)
     test.skip(!hasTestApi, MISSING_TEST_API)
 
-    await page.evaluate(() => (window as WindowWithVc).__vc.ready)
+    const ready = async (): Promise<void> => {
+      await page.evaluate(() => (window as unknown as WindowWithVc).__vc.ready)
+    }
+    await ready()
 
     const boot = await page.evaluate(() => {
-      const vc = (window as WindowWithVc).__vc
+      const vc = (window as unknown as WindowWithVc).__vc
       return { state: vc.state(), hash: vc.hash() }
     })
     expect(boot.state.seed).toBe(E2E_SEED)
@@ -44,7 +52,7 @@ test.describe('deterministic world persistence', () => {
 
     // Pick the first solid block under the spawn point.
     const found = await page.evaluate(() => {
-      const vc = (window as WindowWithVc).__vc
+      const vc = (window as unknown as WindowWithVc).__vc
       const state = vc.state()
       const x = Math.floor(state.x)
       const z = Math.floor(state.z)
@@ -62,7 +70,7 @@ test.describe('deterministic world persistence', () => {
     const replacement = target.id === BLOCK.STONE ? BLOCK.GLASS : BLOCK.STONE
 
     const broken = await page.evaluate((pos: BlockPos) => {
-      const vc = (window as WindowWithVc).__vc
+      const vc = (window as unknown as WindowWithVc).__vc
       vc.breakBlock(pos.x, pos.y, pos.z)
       return vc.getBlock(pos.x, pos.y, pos.z)
     }, target)
@@ -70,7 +78,7 @@ test.describe('deterministic world persistence', () => {
 
     const placed = await page.evaluate(
       (args: { pos: BlockPos; id: number }) => {
-        const vc = (window as WindowWithVc).__vc
+        const vc = (window as unknown as WindowWithVc).__vc
         vc.placeBlock(args.pos.x, args.pos.y, args.pos.z, args.id)
         return vc.getBlock(args.pos.x, args.pos.y, args.pos.z)
       },
@@ -79,7 +87,7 @@ test.describe('deterministic world persistence', () => {
     expect(placed, 'placeBlock must write the requested id').toBe(replacement)
 
     const saved = await page.evaluate(async () => {
-      const vc = (window as WindowWithVc).__vc
+      const vc = (window as unknown as WindowWithVc).__vc
       await vc.save()
       return { hash: vc.hash(), worldId: vc.state().worldId }
     })
@@ -88,10 +96,10 @@ test.describe('deterministic world persistence', () => {
     await page.reload()
     const reloadedApi = await waitForTestApi(page)
     expect(reloadedApi, 'window.__vc must be available again after a reload').toBe(true)
-    await page.evaluate(() => (window as WindowWithVc).__vc.ready)
+    await ready()
 
     const after = await page.evaluate((pos: BlockPos) => {
-      const vc = (window as WindowWithVc).__vc
+      const vc = (window as unknown as WindowWithVc).__vc
       return {
         hash: vc.hash(),
         block: vc.getBlock(pos.x, pos.y, pos.z),
@@ -111,3 +119,5 @@ test.describe('deterministic world persistence', () => {
     expect(errors.join(' | '), 'the whole loop must not log console errors').toBe('')
   })
 })
+
+export { vcOf }

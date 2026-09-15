@@ -16,6 +16,8 @@ import type { MeshBuffer, MeshRequest, MeshResult } from '@voxelcraft/core-types
  */
 export const FALLBACK_MESHER_VERSION = 'bench-fallback-1'
 
+export type RenderLayerValue = (typeof RENDER_LAYER)[keyof typeof RENDER_LAYER]
+
 export interface PaddedNeighbourhood {
   blocks: Uint16Array
   light: Uint8Array
@@ -47,7 +49,7 @@ export function isRenderable(id: number): boolean {
   return id !== BLOCK.AIR
 }
 
-function layerOf(id: number): number {
+function layerOf(id: number): RenderLayerValue {
   if (TRANSLUCENT.has(id)) return RENDER_LAYER.Translucent
   if (id === BLOCK.GLASS) return RENDER_LAYER.Cutout
   return RENDER_LAYER.Opaque
@@ -160,14 +162,7 @@ class LayerBuilder {
     this.indices = next
   }
 
-  pushQuad(
-    x: number,
-    y: number,
-    z: number,
-    face: number,
-    id: number,
-    lightByte: number,
-  ): void {
+  pushQuad(x: number, y: number, z: number, face: number, id: number, lightByte: number): void {
     while ((this.vertexCount + 4) * VERTEX_STRIDE_U16 > this.vertices.length) this.growVertices()
     while (this.indexCount + 6 > this.indices.length) this.growIndices()
 
@@ -177,14 +172,14 @@ class LayerBuilder {
       const o = corners[corner]
       const at = (base + corner) * VERTEX_STRIDE_U16
       // Positions in 1/16 block fixed point, matching the shared vertex layout.
-      this.vertices[at + VERTEX_LANE.PosX0] = (x + o[0]) * 16
-      this.vertices[at + VERTEX_LANE.PosY1] = (y + o[1]) * 16
-      this.vertices[at + VERTEX_LANE.PosZ2] = (z + o[2]) * 16
-      this.vertices[at + VERTEX_LANE.Reserved3] = 0
-      this.vertices[at + VERTEX_LANE.TexLayer4] = id & 0xff
-      this.vertices[at + VERTEX_LANE.NormalAo5] = (face << 4) | (corner << 2) | 3
-      this.vertices[at + VERTEX_LANE.Light6] = lightByte
-      this.vertices[at + VERTEX_LANE.Tint7] = 0
+      this.vertices[at + VERTEX_LANE.PosX] = (x + o[0]) * 16
+      this.vertices[at + VERTEX_LANE.PosY] = (y + o[1]) * 16
+      this.vertices[at + VERTEX_LANE.PosZ] = (z + o[2]) * 16
+      this.vertices[at + VERTEX_LANE.Reserved] = 0
+      this.vertices[at + VERTEX_LANE.TexLayer] = id & 0xff
+      this.vertices[at + VERTEX_LANE.NormalAo] = (face << 4) | (corner << 2) | 3
+      this.vertices[at + VERTEX_LANE.Light] = lightByte
+      this.vertices[at + VERTEX_LANE.Tint] = 0
     }
     this.vertexCount = base + 4
 
@@ -197,7 +192,7 @@ class LayerBuilder {
     this.indexCount += 6
   }
 
-  toBuffer(layer: number): MeshBuffer {
+  toBuffer(layer: RenderLayerValue): MeshBuffer {
     return {
       layer,
       interleaved: this.vertices.slice(0, this.vertexCount * VERTEX_STRIDE_U16)
@@ -213,7 +208,7 @@ export function meshSection(request: MeshRequest): MeshResult {
   const started = performance.now()
   const blocks = request.blocks
   const light = request.light
-  const builders = new Map<number, LayerBuilder>()
+  const builders = new Map<RenderLayerValue, LayerBuilder>()
   let quads = 0
 
   for (let y = 0; y < SECTION_Y; y++) {

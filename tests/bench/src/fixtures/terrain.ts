@@ -29,7 +29,12 @@ export interface FixtureChunk {
 }
 
 const WATER_FLUID = packFluid({ kind: FLUID.Water, level: 0, falling: false })
-const ORES = [BLOCK.COAL_ORE, BLOCK.IRON_ORE, BLOCK.GOLD_ORE, BLOCK.DIAMOND_ORE] as const
+const ORES: readonly number[] = [
+  BLOCK.COAL_ORE,
+  BLOCK.IRON_ORE,
+  BLOCK.GOLD_ORE,
+  BLOCK.DIAMOND_ORE,
+]
 
 function smooth(t: number): number {
   return t * t * (3 - 2 * t)
@@ -98,7 +103,7 @@ export function generateFixtureChunk(
       }
 
       for (let y = 4; y <= height; y++) {
-        let id = BLOCK.STONE
+        let id: number = BLOCK.STONE
         if (y > height - 4) id = BLOCK.DIRT
         if (y === height) id = height < SEA_LEVEL ? BLOCK.SAND : BLOCK.GRASS_BLOCK
         if (y > 6 && y < 52 && hash01(seed, 31, wx, y, wz) > 0.972) id = BLOCK.AIR
