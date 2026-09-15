@@ -1,0 +1,112 @@
+{
+  "task": "client-a",
+  "branch": "feat/mc-20260916/client-a",
+  "status": "in_progress",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "cddd974a7e27fa8e4639cebdb5b33c2e9fde370d",
+  "commits": [
+    "5bf7f2e599b2a0aa58e2682f4c15ff88bdef8451 feat(client): greedy mesher, worker pool, WebGL2 renderer and game app wiring",
+    "f9fc1d8b7c7f06b78d0c2c76e04fcd944cbe08f0 merge: client-c UI, audio, E2E and bench harnesses (merge --no-ff of feat/mc-20260916/client-c)",
+    "baf876d89f8296408e49e86de36c3a907b89f43a feat(game): wire UI and audio, conform window.__vc to the E2E harness",
+    "cddd974a7e27fa8e4639cebdb5b33c2e9fde370d fix(client): declare the GLSL3 fragment output instead of gl_FragColor"
+  ],
+  "files_changed": [
+    "packages/client/src/mesher/textures.ts",
+    "packages/client/src/mesher/padded.ts",
+    "packages/client/src/mesher/appearance.ts",
+    "packages/client/src/mesher/greedy.ts",
+    "packages/client/src/mesher/index.ts",
+    "packages/client/src/worker/protocol.ts",
+    "packages/client/src/worker/mesher.worker.ts",
+    "packages/client/src/worker/pool.ts",
+    "packages/client/src/render/atlasTexture.ts",
+    "packages/client/src/render/material.ts",
+    "packages/client/src/render/sectionMesh.ts",
+    "packages/client/src/render/renderer.ts",
+    "packages/client/src/render/index.ts",
+    "packages/client/src/index.ts",
+    "packages/client/src/__tests__/mesher.test.ts",
+    "packages/client/src/__tests__/worker.test.ts",
+    "packages/client/src/__tests__/atlas.test.ts",
+    "packages/client/vitest.config.ts",
+    "packages/client/worker-env.d.ts",
+    "apps/game/index.html",
+    "apps/game/vite.config.ts",
+    "apps/game/src/main.ts",
+    "apps/game/src/env.d.ts",
+    "apps/game/src/assets.ts",
+    "apps/game/src/ui-bridge.ts",
+    "apps/game/src/raycast.ts",
+    "apps/game/src/world/localWorld.ts",
+    "apps/game/src/world/store.ts",
+    "tests/bench/results/bench.json",
+    "docs/reports/client-a.json"
+  ],
+  "checks": [
+    {
+      "name": "tsc",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/lint.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/test.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/build.log"
+    },
+    {
+      "name": "size",
+      "command": "pnpm size",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/size.log"
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm test:e2e",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/e2e.log"
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "14d89bf28b534116",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/bench.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "STATUS\nAll seven verification commands are exit 0 at head_sha cddd974 (job 14d89bf28b534116, runtime 32.6 s, TSC=0 LINT=0 TEST=0 BUILD=0 SIZE=0 E2E=0 BENCH=0) and the branch is pushed to origin. status is in_progress only because my L2 client-b (packages/assets-gen) is still running; it has pushed 213727e to feat/mc-20260916/client-b but I have not merged it yet. This report will be updated to done after that merge is verified green.\n\nWHAT I IMPLEMENTED MYSELF\n- Greedy mesher (packages/client/src/mesher/**): 0fps-style slice sweep over 16^3 sections, reading an 18^3 padded copy (PADDED, paddedIndex from core-types) so neighbour faces and cross-section light are resolved without touching other chunks. Per-axis masks merge runs into quads; AO = 3 - (side1 + side2 + corner) per corner with quad-split flipping when ao(0,0) + ao(1,1) > ao(0,1) + ao(1,0); vertices are Uint16 interleaved at VERTEX_STRIDE_U16 = 8 in VERTEX_LANE order (PosX, PosY, PosZ, Reserved, TexLayer, NormalAo, Light, Tint); Opaque, Cutout and Translucent are emitted as three separate MeshBuffers (RENDER_LAYER) so transparency sorting and depth writes can differ per layer. Positions are stored in 1/16 block units, so the shader divides by 16. MESHER_VERSION = 1, MAX_VERTICES = 65532 (Uint16 index safety).\n- Appearance/texture tables (mesher/appearance.ts, mesher/textures.ts): the client owns the canonical TEXTURE_NAMES list (73 entries, index 0 is the 'missing' tile) and lane 4 stores that index, which is also the array-texture layer. Water, ice and glass are full cubes; SNOW_BLOCK reuses the snow tile; doors, snow_layer and pistons are cube approximations for now; grass, foliage, water and lava use TINT slots (TINT_COUNT = 5) resolved in the shader instead of baked vertex colours.\n- Worker protocol (packages/client/src/worker/**): MesherMessage / MesherResponse with revision matching (stale responses are dropped), ArrayBuffer transfer for the interleaved and index buffers, static new Worker(new URL('./mesher.worker.ts', import.meta.url), { type: 'module' }) so Vite can bundle it, a local worker-env.d.ts so worker globals do not collide with DOM types, an inline fallback path when Worker is unavailable (used by the E2E test mode), and crossOriginIsolated feature detection instead of requiring SharedArrayBuffer.\n- three.js renderer (packages/client/src/render/**): WebGL2, a 2D array texture built from the assets-gen atlas layers, one ShaderMaterial per render layer (defines CUTOUT / TRANSLUCENT), frustum culling over per-section bounds, render distance, a day/night cycle driving uSunDir / uSunColor / uAmbient, fog, and an underwater tint via uUnderwater. Uploads are throttled to PERF.uploadsPerFrame; RenderStats reports drawCalls, triangles, quads, sections, visibleSections, queuedUploads and fps for the F3 overlay.\n- App wiring (apps/game/**): main.ts owns the game loop, player physics, block break/place through a DDA raycast (raycast.ts), the UI bridge to client-c's createUi/createAudio, the ?test=1&seed&rd&w&h query handling and the window.__vc harness API the E2E specs need.\n\nMEASUREMENTS\n- pnpm size (gzip): dist/assets/index-zUpfCzAF.js raw 586678 / gzip 150313, dist/assets/mesher.worker-D1sygxe-.js raw 10715 / gzip 4470, dist/index.html raw 725 / gzip 446. TOTAL raw=598118 gzip=155229. three.js dominates the main chunk; the worker chunk stays under 11 kB raw because the mesher has no three.js dependency.\n- pnpm bench (render distance 8, seed 1337): chunkGenAvgMs 0.292 (budget 6, fail > 18) ok, chunkMeshAvgMs 3.909 (budget 12, fail > 36) ok, simTickAvgMs 0.081 (budget 8, fail > 24) ok, sectionMeshAvgMs 0.782 informational against PERF.sectionMeshBudgetMs 1.5. Sample: 289 chunks generated, 160 non-empty sections meshed across 32 chunks (352 all-air sections skipped), 65773 quads. chunkMeshAvgMs roughly doubled versus client-c's fallback baseline (1.887) because the real greedy mesher now runs with AO, tint and three-layer splitting instead of one quad per visible face.\n- pnpm test:e2e: 4 Playwright tests passed (5.8 s) under SwiftShader at render distance 2 and canvas 640x360, with zero console errors, including the break, place, save, reload persistence loop; screenshots land in tests/e2e/test-results/.\n- pnpm -r test: 87 unit tests passing (core-types 29, tests/e2e unit 3, packages/client 55) covering mesher determinism (byte-identical vertices for identical input), the face-count invariant (sum of merged w*h equals the visible face count), a single voxel producing 6 quads and 24 vertices, a fully enclosed voxel producing 0 faces, AO range and rotation, layer separation, and atlas/layer-mapping determinism.\n\nGLSL3 FINDING (root cause of the only red E2E run)\nWith glslVersion: THREE.GLSL3, three 0.186 injects only the varying/attribute and texture aliases; the 'layout(location = 0) out highp vec4 pc_fragColor' and '#define gl_FragColor pc_fragColor' lines are explicitly skipped on that path (three.module.js around line 6978). A GLSL3 ShaderMaterial must therefore declare its own fragment output. Writing gl_FragColor produced 'ERROR: 0:88: gl_FragColor : undeclared identifier' plus a VALIDATE_STATUS failure, which the zero-console-error assertion correctly caught in all four specs. Fixed in cddd974 by declaring layout(location = 0) out vec4 fragColor and assigning to it.\n\nL2 ORCHESTRATION (my delegation, deliberate deviation recorded)\n- client-c (merged in f9fc1d8): UI (packages/client/src/ui/**), audio (packages/client/src/audio/**), tests/e2e/** and tests/bench/**. client-b (running): packages/assets-gen/** only.\n- Deviation from the suggested split: apps/game/** stayed with me instead of going to client-c, because the window.__vc harness, the render loop and the UI host callbacks all had to be authored against my renderer and mesher to avoid a circular ownership. client-c owned the specs that consume that harness, so the seam is one interface (VcTestApi + UiHost) rather than a shared directory. No path was owned by two agents.\n- Integration fixes I made after the merge: re-exported createUi/createAudio and the UI types from packages/client/src/index.ts, added #ui-root and #game-canvas to apps/game/index.html, implemented the query-string test mode and window.__vc (ready, state, getBlock, breakBlock, placeBlock, save, hash, errors), added packages/client/vitest.config.ts, and replaced client-c's bench mesher fallback by exporting the real meshSection/createEmptyPadded/setPaddedBlock/fillPaddedLight/countVisibleFaces (bench.json now records mesher.source = client, fallbackUsed = false). I also removed my own Digit1-9/F3 key handling because createUi installs its own listener, and normalised dotted sound names ('ui.click') to client-b's underscore manifest keys (ui_click).\n\nTEST DOUBLES AND FIXTURES (world, sim and gameplay are still scaffolds)\n- apps/game/src/world/localWorld.ts is a deterministic local terrain fixture (core-types hashU32/hash01 only, SEA_LEVEL 62, five biome names) with edit overlay, revision tracking, buildMeshRequest and a stateHash used by the E2E hash assertion. apps/game/src/world/store.ts is a localStorage WorldStore double standing in for the gameplay IndexedDB implementation. Both live inside my owned paths and must be swapped for @voxelcraft/world and @voxelcraft/gameplay once those land; no other package was touched.\n- Asset loading is gated behind the build-time flag __VC_HAS_ASSETS__ (and vite publicDir is disabled while packages/assets-gen/generated lacks atlas.json), so the app boots with a procedural placeholder atlas and no 404 console errors until client-b lands. When client-b's output appears the flag flips and the atlas and WAV fetches become live.\n\nOTHER\n- No contract change is needed. packages/core-types, docs/orchestration, root config, scripts, CI and package.json dependency declarations were not modified, and no dependency was added or changed.\n- All code, builds, tests and network access ran in the gha mcp runner env linux-0hnn8qdt only; never more than two heavy builds at once, and E2E and build were never run concurrently. Git identity was passed per commit with git -c user.name/user.email; no shared git config, no other branch and no other agent's report was touched.\n- gha mcp note for the orchestrator: start_command rejects wait_ms (waiting belongs to poll_job / execute), and the skill document's tool names (exec, exec_read, exec_kill, file_read, file_write with content_b64) do not exist; plan.md section 6 is the accurate list."
+}
