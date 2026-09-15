@@ -7,154 +7,154 @@
   "commits": [
     {
       "sha": "395745d",
-      "subject": "merge: take L1-A world-a base (be7923c) onto CONTRACT_SHA 83c5553"
+      "subject": "merge: take L1-A world-a base (be7923c) onto CONTRACT_SHA 83c5553 [author world-b]"
     },
     {
       "sha": "4234e19",
-      "subject": "world(noise): harden perlin/fbm/warp/climate hot paths (v2)"
+      "subject": "world(noise): harden perlin/fbm/warp/climate hot paths (v2) [author world-b]"
     },
     {
       "sha": "c6dc219",
-      "subject": "world(noise): keep perlin samplers inlinable (1.21x faster, bit-exact)"
+      "subject": "world(noise): keep perlin samplers inlinable (1.21x faster, bit-exact) [author world-b]"
     },
     {
       "sha": "5ab9f1d",
-      "subject": "docs(reports): world-b noise report (also swept in the test work staged in this worktree)"
+      "subject": "docs(reports): world-b noise report; unintentionally also carried the other session's staged test work [author world-b]"
     },
     {
       "sha": "61d8159",
-      "subject": "test(world-b): drop out-of-scope guards test added by another process"
+      "subject": "test(world-b): drop guards test as out-of-scope (later restored by its author in ecaf330) [author world-b]"
     },
     {
       "sha": "487ced8",
-      "subject": "docs(reports): final world-b report at 61d8159 (four gates green)"
+      "subject": "docs(reports): report at 61d8159 [author world-b]"
     },
     {
       "sha": "ecaf330",
-      "subject": "test(world): make the seed-sensitivity bounds exact, restore the noise guards"
+      "subject": "test(world): make the seed-sensitivity bounds exact, restore the noise guards [author 'world-b agent', the second session]"
     }
   ],
   "files_changed": [
-    "packages/world/src/noise/perlin.ts",
-    "packages/world/src/noise/fbm.ts",
-    "packages/world/src/noise/climate.ts",
-    "packages/world/src/noise/index.ts",
-    "packages/world/src/__tests__/world-b.noise.test.ts",
-    "packages/world/src/__tests__/world-b.guards.test.ts",
-    "docs/reports/world-b.json"
+    "packages/world/src/noise/perlin.ts (session 'world-b')",
+    "packages/world/src/noise/fbm.ts (session 'world-b')",
+    "packages/world/src/noise/climate.ts (session 'world-b')",
+    "packages/world/src/noise/index.ts (session 'world-b')",
+    "packages/world/src/__tests__/world-b.noise.test.ts (written by 'world-b', seed bounds tightened by 'world-b agent')",
+    "packages/world/src/__tests__/world-b.guards.test.ts (session 'world-b agent')",
+    "docs/reports/world-b.json (merged from both sessions)"
   ],
   "checks": [
     {
       "name": "typecheck (final, at ecaf330)",
       "command": "pnpm -r exec tsc --noEmit",
-      "job_id": "379f54b6891c4fcc",
+      "job_id": "b17d87eb9a014e30",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "/tmp/wb-gates2.log, G1_EXIT=0, no diagnostics"
+      "log": "no diagnostics, EXIT=0"
     },
     {
       "name": "lint (final, at ecaf330)",
       "command": "pnpm -r lint",
-      "job_id": "379f54b6891c4fcc",
+      "job_id": "1372f5dba4734a10",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "/tmp/wb-gates2.log, G2_EXIT=0"
+      "log": "eslint . Done in all 9 projects, EXIT=0"
     },
     {
       "name": "test (final, at ecaf330)",
       "command": "pnpm -r test",
-      "job_id": "379f54b6891c4fcc",
+      "job_id": "b1ebdc55be294892",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "/tmp/wb-gates2.log, G3_EXIT=0; core-types 4 files / 29 tests; world 4 files / 61 tests; chunkGen avg 6.356 ms over 24 chunks"
+      "log": "world 4 files / 61 tests, core-types 4 files / 29 tests, EXIT=0"
     },
     {
       "name": "build (final, at ecaf330)",
       "command": "pnpm build",
+      "job_id": "9db8c8da3be9415d",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets-gen manifest plus vite build in 35ms, EXIT=0; git status clean, local == origin"
+    },
+    {
+      "name": "four gates, independent run by the second session at ecaf330",
+      "command": "pnpm -r exec tsc --noEmit; pnpm -r lint; pnpm -r test; pnpm build",
       "job_id": "379f54b6891c4fcc",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "/tmp/wb-gates2.log, G4_EXIT=0"
+      "log": "/tmp/wb-gates2.log, G1..G4 all EXIT=0; chunkGen avg 6.356 ms over 24 chunks"
     },
     {
-      "name": "four gates, earlier run with the guards suite present (before the bounds were tightened)",
-      "command": "pnpm -r exec tsc --noEmit; pnpm -r lint; pnpm -r test; pnpm build",
-      "job_id": "5bd8a967c9194c98",
-      "state": "exited",
-      "exit_code": 0,
-      "eof": true,
-      "log": "/tmp/wb-gates.log, G1..G4 all EXIT=0, world 4 files / 61 tests"
-    },
-    {
-      "name": "world package typecheck and vitest, gate before committing ecaf330",
-      "command": "../../node_modules/.bin/tsc --noEmit; ../../node_modules/.bin/vitest run",
+      "name": "world package typecheck and vitest, gate before ecaf330 was committed",
+      "command": "tsc --noEmit; vitest run",
       "job_id": "62a9cf5533444afc",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "/tmp/wb-tsc5.log TSC_EXIT=0; /tmp/wb-vitest6.log VITEST_EXIT=0, 4 files / 61 tests. The commit was made conditional on both being 0."
+      "log": "TSC_EXIT=0, VITEST_EXIT=0, 4 files / 61 tests; the commit was made conditional on both being 0"
     },
     {
-      "name": "lattice probe for the createNoiseBasis seed assertion",
-      "command": "../../node_modules/.bin/tsx /tmp/wb-probe.ts",
+      "name": "lattice probe behind the exact seed bounds",
+      "command": "tsx /tmp/wb-probe.ts",
       "job_id": "f561b8bd0b7f44e5",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "steps 6.3 / -4.7: 195 of 200 samples move with the seed, 40 within a float of a lattice line, ties at i=9,47,49,97,99. Dyadic steps 6.5+0.25 / -4.5+0.375: 200 of 200, zero near-lattice samples."
+      "log": "steps 6.3 / -4.7: only 195 of 200 samples move with the seed, 40 sit within a float of a lattice line, ties at i=9,47,49,97,99. Dyadic steps: 200 of 200, zero near-lattice samples."
     },
     {
       "name": "probe for the two remaining slack bounds",
-      "command": "../../node_modules/.bin/tsx /tmp/wb-probe2.ts",
+      "command": "tsx /tmp/wb-probe2.ts",
       "job_id": "650db74291104e31",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "perlin2 steps 0.73 / -1.21: seedDiffs 255 of 256, saltDiffs 256 of 256, 5 near-lattice samples. Dyadic 0.75 / -1.25: 256 of 256 both, zero near-lattice. climateAt on the committed integer columns: 200 of 200 already."
+      "log": "perlin2 steps 0.73 / -1.21: 255 of 256 seed diffs, 5 near-lattice samples. Dyadic 0.75 / -1.25: 256 of 256 for both seed and salt. climateAt columns: 200 of 200."
     },
     {
-      "name": "baseline before this session edited anything (predecessor's uncommitted tree)",
-      "command": "../../node_modules/.bin/tsc --noEmit; ../../node_modules/.bin/vitest run",
-      "job_id": "78eb4568cfa8416a",
-      "state": "exited",
-      "exit_code": 1,
-      "eof": true,
-      "log": "TSC_EXIT=0. VITEST_EXIT=1: 48 passed, 1 failed, the only failure being world-b.noise.test.ts:503 'expected 184 to be greater than 195'. Recorded for provenance: the noise sources were already correct, the test's sampling was not."
-    },
-    {
-      "name": "bit-exactness and perf probe, v1 vs v2 (reported by the second world-b session, not re-run here)",
-      "command": "node_modules/.bin/tsx /tmp/wb-perf.mts",
+      "name": "bit-exactness and perf probe, v1 vs final noise layer",
+      "command": "tsx /tmp/wb-perf.mts",
       "job_id": "36a8525b2ffa4082",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "Claimed: bit-exact on chunks (0,0) (5,-3) (-12,7) (31,29) (30,-48); noise 1.0981 ms/chunk (v1) vs 0.9075 ms (final), 1.21x. This session did not run that job; the bit-exactness half of the claim is independently confirmed by world-b.guards.test.ts, which rebuilds perlin2/perlin3 and the fBm progression from hashU32 and compares them bit for bit."
+      "log": "bitExact true on chunks (0,0) (5,-3) (-12,7) (31,29) (30,-48); noise ms/chunk v1 1.0981 vs final 0.9075, speedup 1.2101"
     },
     {
-      "name": "perlin variant benchmark (reported by the second world-b session, not re-run here)",
-      "command": "node_modules/.bin/tsx /tmp/wb-perf2.mts",
+      "name": "perlin variant benchmark, regression bisect",
+      "command": "tsx /tmp/wb-perf2.mts",
       "job_id": "4c28dd12bc9543ad",
       "state": "exited",
       "exit_code": 0,
       "eof": true,
-      "log": "Claimed ms/chunk, all bit-exact: v1 helpers 1.0745; Int8Array+inlined 1.2763; plain array+inlined 1.4730; plain array+helpers 1.2497; Int8Array+helpers 1.1458. Unverified here."
+      "log": "ms/chunk, all bit-exact: v1 helpers 1.0745; Int8Array+inlined 1.2763; plain array+inlined 1.4730; plain array+helpers 1.2497; Int8Array+helpers 1.1458"
+    },
+    {
+      "name": "provenance: red baseline recorded by the second session before it edited anything",
+      "command": "tsc --noEmit; vitest run",
+      "job_id": "78eb4568cfa8416a",
+      "state": "exited",
+      "exit_code": 1,
+      "eof": true,
+      "log": "TSC_EXIT=0; VITEST_EXIT=1 with 48 passed and 1 failed, the only failure being the thresholded seed assertion in world-b.noise.test.ts. The noise sources were already correct; the test's sampling was not."
     }
   ],
   "contract_changes_needed": [],
   "notes": [
-    "Two sessions ran as world-b against this worktree at the same time. Commits 4234e19, c6dc219, 5ab9f1d, 61d8159 and 487ced8 are authored 'world-b <world-b@local>'; this session's commit is ecaf330, authored 'world-b agent <world-b@voxelcraft.local>', the identity this session was told to use. Neither session's work was discarded: the other session's noise sources were reviewed and verified rather than rewritten, and history was not rewritten. This is an orchestration defect for L1-A/L0 to resolve, not a code defect. Symptoms seen here: staged index entries being swept into another session's commit, and one session deleting the other's file.",
-    "src/noise/** was NOT rewritten by this session. The predecessor left perlin.ts, fbm.ts, climate.ts and noise/index.ts modified but uncommitted, and review found them sound and value-preserving: gradients from hashU32 only (GRAD2 masked to 8 directions, GRAD3 to 12 cube-edge vectors), quintic fade, SCALE3 0.816496580927726, the *Raw / guarded-wrapper split, fBm normalised by accumulated amplitude with OCTAVE_SALT_STRIDE 0x3b9b and constant ROT_C/ROT_S per-octave rotation, ridged2 remapped to [-1,1], a two-stage domain warp, and climateAt over NOISE_FIELDS. The frozen seam is intact and additive only: noise/index.ts still exports every previously exported name and adds perlin2Raw, perlin3Raw, warp2To and warpStages2, and NoiseBasis / CreateNoiseBasis / WarpResult are unchanged.",
-    "This session's contribution is verification and the two test files. packages/world/src/__tests__/world-b.guards.test.ts (427 lines, 12 tests) locks the rules instead of pinned constants: src/noise contains no wall clock, no global PRNG and no trigonometry (scanned from the sources with comments stripped, using regexes assembled at runtime so the banned token strings never appear literally, which matters because world-a.terrain.test.ts greps the same tree) and imports nothing but @voxelcraft/core-types and siblings; perlin2 and perlin3 are rebuilt from hashU32, the gradient tables and the quintic fade and compared bit for bit, with a cubic-fade variant required to disagree on more than 90 percent of samples; the fBm octave progression is checked against a reference on all six NOISE_FIELDS and both CAVE_FIELDS and as a closed form to 12 decimals, with the contract values (climate lacunarity 1.98, continent gain 0.51, rotatePerOctave) asserted; the module-level Float64Array scratch buffers are proven not to leak between interleaved climateAt, warp2 and warpStages2 calls; and a 48x48 region sampled in reversed 16x16 tiles must equal a whole-region pass, which is what makes per-chunk generation order-independent.",
-    "That guards file sits inside world-b's declared ownership: packages/world/src/__tests__/world-b.*.test.ts, with new files of that shape explicitly permitted. Commit 61d8159 deleted it on the narrower reading that only world-b.noise.test.ts was writable; ecaf330 restores it verbatim from 5ab9f1d (md5 2d80277657b75e1ab7f10d05f854966a, blob 4f75c8d0549152adfee4812908b9c7110013cd32). If L0 intends the narrow reading instead, say so and it can be moved, but it should not simply be dropped: it is the only check that would catch a future edit reintroducing wall-clock or unseeded entropy, breaking the quintic fade, or leaking the shared scratch buffers.",
-    "All three seed-sensitivity bounds in world-b.noise.test.ts are now exact, with measurements rather than tolerance. The failing one asserted more than 195 of 200 samples must move with the seed and produced 184; the cause was the sampling, not the noise: steps of 6.3 and -4.7 put 40 of 200 samples on or within a float of a lattice line, where one fade weight is 0, the sample collapses onto what a single gradient component can produce, and two seeds legitimately tie (probe f561b8bd0b7f44e5). Sampling on dyadic steps instead gives 200 of 200 with zero near-lattice samples, so the assertion is now toBe(samples). The same reasoning applied to the two remaining slack bounds (probe 650db74291104e31): perlin2 now walks 0.75i+0.3125 / -1.25i+0.1875 and asserts 256 of 256 for both seed and salt changes, and the climateAt column test asserts all 200 columns move. No threshold was loosened anywhere; an earlier relaxation to 190 that appeared mid-run was replaced by the stronger form.",
-    "Independent confirmation of the c6dc219 'bit-exact' claim. That commit rewrote perlin.ts (61 insertions, 60 deletions) to restore small monomorphic helpers after the first inlining pass measured slower. It landed in this worktree after the guards suite existed, and the suite's from-first-principles comparison still passed, so the rewrite is value-preserving for perlin2 and perlin3 rather than merely asserted to be. golden.json is unchanged (md5 1d82b7efb557987e1cb3d4676ee61086); golden:update was not run and was not needed, and the world-a golden, ordering, biome-distribution, ore-depth, cave and sea-level-62 suites all still pass, so locate.ts was not needed either.",
-    "Performance: the chunkGen budget is still missed and that gap is outside this task's paths. world-a's perf line printed 6.521, 11.019, 6.218, 6.355, 6.599 and 6.356 ms across six runs of this session against PERF.chunkGenBudgetMs 4 and a bench ceiling of 6; the 11.0 ms outlier coincided with a concurrent heavy job from world-c in the same env, so treat single runs on this shared runner as noisy. The other session measured the noise layer itself at about 0.91 ms/chunk, so the remainder is column fill and feature placement, owned by world-a and world-c. The noise hot path is allocation-free per sample (shared Float64Array scratch, no WarpResult objects in the inner loop).",
-    "Determinism holds by construction and is tested: every sample is a pure function of (seed, salt, coordinates) via hashU32, with no mutable permutation table, instance counter or call-order dependence, so reordered, split or parallel generation is byte-identical. Randomness comes only from core-types hashU32 / hash01 / makeRng.",
-    "Ownership respected: packages/core-types, docs/orchestration, root config, CI, package.json dependency declarations and src/internal.ts are untouched; no dependency was added or bumped; nothing outside packages/world/src/noise/**, packages/world/src/__tests__/world-b.*.test.ts and docs/reports/world-b.json was written. No contract change is needed, so contract_changes_needed is empty. The other worktrees (repo on world-a, wt/world-c) were never touched, and no env was created, extended or destroyed.",
-    "This report commit sits directly on top of head_sha ecaf330. Because a second session may still be committing to this branch, verify that origin/feat/mc-20260916/world-b still contains world-b.guards.test.ts before merging; at the time of writing, origin equals ecaf330 plus this report commit."
+    "ORCHESTRATION DEFECT, please resolve before merging. Two sessions ran as world-b in this one worktree at the same time, with different git identities: 'world-b <world-b@local>' (commits 395745d, 4234e19, c6dc219, 5ab9f1d, 61d8159, 487ced8) and 'world-b agent <world-b@voxelcraft.local>' (commit ecaf330). Observed damage: files written by one session sat STAGED in the shared index and were swept into the other session's commit (5ab9f1d); one session deleted the other's new test file (61d8159) as out-of-scope; and each session overwrote the other's uncommitted docs/reports/world-b.json. No work was lost and history was never rewritten. This report is merged from both. If only one world-b was intended, stop the duplicate; if two are intended, give them separate worktrees, because a shared index cannot attribute or isolate concurrent commits.",
+    "Implementation, by session 'world-b': packages/world/src/noise/** was reworked in 4234e19 and c6dc219 (perlin.ts, fbm.ts, climate.ts, index.ts). Gradients come from hashU32 only, with GRAD2 masked to 8 directions and GRAD3 to 12 cube-edge vectors, quintic fade, SCALE3 0.816496580927726, a *Raw / guarded-wrapper split, fBm normalised by accumulated amplitude with OCTAVE_SALT_STRIDE 0x3b9b and constant per-octave rotation, ridged2 remapped to [-1,1], a two-stage domain warp, and climateAt over NOISE_FIELDS. The frozen seam is additive only: every previously exported name still exists, with perlin2Raw, perlin3Raw, warp2To and warpStages2 added, and NoiseBasis / CreateNoiseBasis / WarpResult unchanged, so src/index.ts, src/terrain/**, src/biome/** and src/features/** compile untouched.",
+    "Output is bit-identical to L1-A's v1 for every field, verified three independent ways: about 40 pinned values in world-b.noise.test.ts (seeds 1337 and 20260916), an accumulated-sum probe over 5 chunks against v1 extracted from 395745d (job 36a8525b2ffa4082), and world-b.guards.test.ts, which rebuilds perlin2/perlin3 and the fBm octave progression from hashU32 and compares them bit for bit. That third check also independently confirms the c6dc219 perlin.ts rewrite was value-preserving rather than merely asserted to be.",
+    "golden.json is untouched (md5 1d82b7efb557987e1cb3d4676ee61086). golden:update was NOT run and was not needed, and world-a's golden, ordering, biome-distribution, ore-depth, cave and sea-level suites all still pass.",
+    "Performance: the noise layer went from 1.0981 to 0.9075 ms per chunk, 1.21x, saving about 0.19 ms per chunk, allocation-free per sample (shared Float64Array scratch, no WarpResult objects in the inner loop). Full chunkGen still misses its budget and that gap is outside this task's paths: world-a's perf line printed 6.521, 11.019, 6.218, 6.355, 6.599, 6.356 and 6.471 ms across runs against PERF.chunkGenBudgetMs 4 and BENCH ceiling 6. The 11.0 ms outlier coincided with a concurrent heavy job from world-c in this shared env, so single runs here are noisy. The remainder is column fill and feature placement, owned by world-a and world-c.",
+    "Regression found and fixed inside this task. The first v2 pass (4234e19) hand-inlined the lattice dot products and the interpolation tree and used Int8Array gradient tables, which measured 16-19 percent SLOWER than v1 because the sampler bodies grow past what V8 will inline into the fBm octave loops (job 4c28dd12bc9543ad; plain array plus inlining was worst at 1.37x v1). c6dc219 restored small monomorphic dot2/dot3/lerp helpers and plain tables, and perlin.ts carries the measurements in a comment so the inlining is not reintroduced.",
+    "Every seed-sensitivity bound is now exact, with no thresholds left anywhere. perlin2 asserts all 256 samples move for both a seed change and a salt change, and climateAt asserts every sampled column moves. The earlier thresholded forms (more than 250, more than 195, and a mid-run relaxation to 190) were caused by sampling, not by the noise: steps like 6.3 / -4.7 put 40 of 200 samples on or within a float of a lattice line, where one fade weight is 0, the sample collapses onto what a single gradient component can produce, and two seeds legitimately tie (probes f561b8bd0b7f44e5 and 650db74291104e31). Dyadic steps such as x = 0.75i + 0.3125 and z = -1.25i + 0.1875 are strictly off-lattice, so all four cell gradients always contribute and the exact bound is provable. The exact form came from session 'world-b agent' in ecaf330 and is strictly stronger than what it replaced.",
+    "world-b.guards.test.ts (427 lines, authored by session 'world-b agent') locks rules rather than constants: src/noise contains no wall clock, no global PRNG and no trigonometry, scanned from source with comments stripped and the banned patterns assembled at runtime so the literal token strings never appear (which matters because world-a.terrain.test.ts greps the same tree), and imports nothing but @voxelcraft/core-types and siblings; perlin2/perlin3 are rebuilt from first principles, with a cubic-fade variant required to disagree on over 90 percent of samples; the fBm progression is checked on all NOISE_FIELDS and CAVE_FIELDS and as a closed form to 12 decimals; the shared scratch buffers are proven not to leak across interleaved climateAt, warp2 and warpStages2 calls; and a 48x48 region sampled in reversed 16x16 tiles must equal a whole-region pass, which is what makes generation order-independent. It reads files but performs no shell, network or write calls. It was reviewed and accepted, not merely inherited. L0 should confirm whether new world-b.*.test.ts files are in scope; if the narrow reading holds, move it rather than drop it, since it is the only check that would catch a future edit reintroducing wall-clock or unseeded entropy, breaking the quintic fade, or leaking the scratch buffers.",
+    "Ownership respected by both sessions: packages/core-types, docs/orchestration, root config, CI, package.json dependency declarations and src/internal.ts are untouched, no dependency was added or bumped, nothing outside packages/world/src/noise/**, packages/world/src/__tests__/world-b.*.test.ts and docs/reports/world-b.json was written, no other worktree was touched, and no env was created, extended or destroyed. No contract change is needed.",
+    "This report commit sits directly on top of head_sha ecaf330. Because a second session may still be committing here, re-check origin/feat/mc-20260916/world-b immediately before merging: it should contain both world-b.noise.test.ts and world-b.guards.test.ts, and pnpm -r test should report 4 files / 61 tests for the world package."
   ]
 }
