@@ -1,0 +1,75 @@
+{
+  "task": "world-a",
+  "branch": "feat/mc-20260916/world-a",
+  "status": "in_progress",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "be7923cc25376a788d746b56aec5677ca44b494b",
+  "commits": [
+    "293ceb60c86953439d6d34fec9ce5c90f8daa428 feat(world): deterministic terrain, biomes, caves, ores and vegetation",
+    "be7923cc25376a788d746b56aec5677ca44b494b test(world): golden chunk hashes, determinism, biome, cave and ore suites"
+  ],
+  "files_changed": [
+    "packages/world/package.json",
+    "packages/world/scripts/locate.ts",
+    "packages/world/scripts/probe.ts",
+    "packages/world/scripts/update-golden.ts",
+    "packages/world/src/__tests__/golden.json",
+    "packages/world/src/__tests__/world-a.features.test.ts",
+    "packages/world/src/__tests__/world-a.terrain.test.ts",
+    "packages/world/src/biome/index.ts",
+    "packages/world/src/features/caves.ts",
+    "packages/world/src/features/index.ts",
+    "packages/world/src/features/ores.ts",
+    "packages/world/src/features/vegetation.ts",
+    "packages/world/src/index.ts",
+    "packages/world/src/internal.ts",
+    "packages/world/src/noise/climate.ts",
+    "packages/world/src/noise/fbm.ts",
+    "packages/world/src/noise/index.ts",
+    "packages/world/src/noise/perlin.ts",
+    "packages/world/src/terrain/column.ts",
+    "packages/world/src/terrain/height.ts",
+    "packages/world/src/testing/chunk-grid.ts",
+    "docs/reports/world-a.json"
+  ],
+  "checks": [
+    {
+      "name": "tsc",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "309745d77aac46b3",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/gate1-tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "20ecc50fc86c4097",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/gate2-lint.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "5af01909fc8c4276",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/gate3-test.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "196e0880a52a464c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/gate4-build.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "実装: createWorldGenerator(seed) が core-types の WorldGenerator を実装 (sampleColumn / generateChunk / decorate / biomeAt)。16x16x256、SEA_LEVEL=62、岩盤4層、6バイオーム (Plains/Forest/Desert/Snowy/Mountains/Ocean)、3Dノイズ洞窟 (cheese + ridged tunnel)、深度依存の鉱石ベイン6種、樹木と植生。乱数は core-types の hashU32 / hash01 / makeRng のみで、座標ハッシュ先行のため生成順に依存しない。blocks は Uint16Array(65536) を blockIndex で索引、水は packFluid で fluids に書く。\n\nテスト (packages/world, vitest 21件): 黄金ハッシュ5ケース (hashBuffer, src/__tests__/golden.json)、同一シードのバイト一致、正順/逆順/4分割相当での順序不変、禁止API (Math.random / Date.now / Math.sin / Math.cos / performance.now) のソース走査、6バイオーム全出現 (10201サンプル)、biomeAt と sampleColumn の一致、岩盤層、海洋チャンクで y=62 が水かつ fluid が非ゼロ、鉱石の深度帯と平均深度の順序、洞窟が地表を全消去しないこと、decorate の決定論と非破壊性。\n\n性能: tsx 直実行の probe では 1チャンク生成の平均 1.964 ms / 32チャンク (PERF.chunkGenBudgetMs=4ms 内)。一方 vitest 実行下では平均 5.820〜6.270 ms / 24チャンク で 4ms を超過する。差は vitest の変換・計測オーバーヘッドと同一 env での並行ジョブ負荷によるもので、テスト閾値 BENCH.chunkGenAvgMsMax(6) * failFactor(3) = 18ms は満たしている。要改善点として記録する。\n\n実測 (seed 1337, 10201列): バイオーム比率 Plains 49.33% / Forest 27.09% / Desert 3.30% / Snowy 3.20% / Mountains 3.79% / Ocean 13.29%。高度 min 34 / max 119 / mean 67.0、海面下 20.77%。鉱石の平均Y は DIAMOND 10.0 < REDSTONE 11.7 < GOLD 15.2 < LAPIS 16.6 < IRON 30.9 < COAL 41.7。洞窟は 4096列中 地表を開口させた列が 0、y=5..64 の空洞率 9.15〜12.24%。初期測定で Mountains が 0.44% しか出なかったため ridgeAmplitude 54→62、mountainSurfaceY SEA_LEVEL+32→SEA_LEVEL+22 に調整した。\n\n運用メモ: 黄金ハッシュは pnpm --filter @voxelcraft/world run golden:update (scripts/update-golden.ts) で再生成する。手編集は禁止。decorate はチャンク境界を越えて書き込むため領域の外周チャンクは部分的にしか装飾されず、テストは内側のチャンクのみを数えている。prettier --check はこのリポジトリ全体 (packages/core-types/src/rng.ts なども) で既に不一致 (.prettierrc.json に useTabs が無く、ソースはタブ) であり、検証ゲート4種には含まれないため変更していない。packages/world/package.json には scripts.golden:update のみ追加し、依存宣言は一切変更していない。\n\n進行中: L2 を2体起動済み (world-b = src/noise/**、world-c = src/features/**、パス分離済み)。両者のマージ後に golden を再生成し、4ゲートを再実行して status を done に更新する。"
+}
