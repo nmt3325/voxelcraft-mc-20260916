@@ -1,0 +1,72 @@
+export const UI_STYLE_ID = 'vc-ui-style'
+
+/**
+ * Scoped to `.vc-ui` and injected as a child of the UI root, never into
+ * document.head: createUi must not touch anything outside its root element.
+ */
+export const UI_CSS = [
+  '.vc-ui { position: absolute; inset: 0; color: #f0f0f0; pointer-events: none;',
+  '  font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; user-select: none; }',
+  '.vc-ui *, .vc-ui *::before, .vc-ui *::after { box-sizing: border-box; }',
+  '.vc-ui [hidden] { display: none !important; }',
+  '.vc-ui button, .vc-ui input { font: inherit; color: inherit; }',
+  '.vc-hud { position: absolute; inset: 0; }',
+  '.vc-crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px;',
+  '  margin: -7px 0 0 -7px; mix-blend-mode: difference;',
+  '  background: linear-gradient(#f4f4f4, #f4f4f4) 50% 0 / 2px 14px no-repeat,',
+  '    linear-gradient(#f4f4f4, #f4f4f4) 0 50% / 14px 2px no-repeat; }',
+  '.vc-stats { position: absolute; left: 50%; bottom: 74px; transform: translateX(-50%);',
+  '  display: flex; gap: 10px; }',
+  '.vc-bar { position: relative; width: 168px; height: 14px; border: 1px solid #000a;',
+  '  background: #0008; overflow: hidden; }',
+  '.vc-bar-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0%; }',
+  '.vc-bar-health .vc-bar-fill { background: #d1443c; }',
+  '.vc-bar-hunger .vc-bar-fill { background: #b9862f; }',
+  '.vc-bar-label { position: relative; display: block; text-align: center; font-size: 11px;',
+  '  text-shadow: 0 1px 0 #000; }',
+  '.vc-hotbar { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);',
+  '  display: flex; gap: 3px; pointer-events: auto; }',
+  '.vc-slot { position: relative; width: 46px; height: 46px; border: 2px solid #2c2c2c;',
+  '  background: #14171cc9; display: flex; align-items: center; justify-content: center;',
+  '  font-size: 10px; text-align: center; overflow: hidden; cursor: pointer; }',
+  '.vc-slot.is-empty { color: transparent; }',
+  '.vc-slot.is-selected { border-color: #f5f5f5; }',
+  '.vc-slot-label { padding: 0 2px; word-break: break-word; line-height: 1.1; }',
+  '.vc-slot-count { position: absolute; right: 2px; bottom: 1px; font-size: 11px;',
+  '  text-shadow: 0 1px 0 #000; }',
+  '.vc-slot-durability-track { position: absolute; left: 3px; right: 3px; bottom: 3px;',
+  '  height: 3px; background: #000a; }',
+  '.vc-slot-durability { display: block; height: 100%; width: 100%; background: #4caf50; }',
+  '.vc-debug { position: absolute; left: 8px; top: 8px; padding: 6px 8px;',
+  '  background: #0b0e13cc; border: 1px solid #2a2f38; font-size: 12px; max-width: 46%; }',
+  '.vc-debug-row { white-space: nowrap; }',
+  '.vc-screen { position: absolute; inset: 0; display: flex; flex-direction: column;',
+  '  gap: 12px; align-items: center; justify-content: center; background: #05070acc;',
+  '  pointer-events: auto; padding: 20px; overflow: auto; }',
+  '.vc-screen h2 { margin: 0; font-size: 20px; letter-spacing: 0.04em; }',
+  '.vc-button { min-width: 190px; padding: 8px 14px; background: #222833;',
+  '  border: 1px solid #454f5e; cursor: pointer; }',
+  '.vc-button.is-inline { min-width: 0; }',
+  '.vc-button.is-danger { min-width: 0; border-color: #7a3b36; }',
+  '.vc-inv-grid { display: grid; grid-template-columns: repeat(9, 46px); gap: 3px; }',
+  '.vc-craft { display: flex; align-items: center; gap: 14px; }',
+  '.vc-craft-grid { display: grid; gap: 3px; grid-template-columns: repeat(3, 46px); }',
+  ".vc-craft-grid[data-grid-size='2'] { grid-template-columns: repeat(2, 46px); }",
+  '.vc-craft-arrow { font-size: 18px; }',
+  '.vc-form { display: flex; flex-direction: column; gap: 10px; min-width: 330px; }',
+  '.vc-field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }',
+  '.vc-field-value { min-width: 66px; text-align: right; }',
+  '.vc-world-list { list-style: none; margin: 0; padding: 0; display: flex;',
+  '  flex-direction: column; gap: 6px; min-width: 360px; max-height: 46vh; overflow: auto; }',
+  '.vc-world-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px;',
+  '  background: #161b23; border: 1px solid #2c3441; }',
+  '.vc-world-name { flex: 1; }',
+  '.vc-world-meta { opacity: 0.7; font-size: 11px; }',
+].join('\n')
+
+export function createStyleElement(doc: Document): HTMLStyleElement {
+  const style = doc.createElement('style')
+  style.id = UI_STYLE_ID
+  style.textContent = UI_CSS
+  return style
+}
