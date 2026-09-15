@@ -1,3 +1,4 @@
-// light subtree barrel. Owned by the assigned L2 agent.
-// Public symbols MUST be prefixed to stay collision free under `export *`.
-export {}
+// light subtree barrel (owner sim-b).
+// Public symbols are prefixed (`light*` / `Light*` / `LIGHT_*`) to stay
+// collision free under the package level `export *`.
+export * from './lightEngine'
