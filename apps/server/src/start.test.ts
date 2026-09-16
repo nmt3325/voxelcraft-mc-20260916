@@ -1,7 +1,33 @@
-import { BLOCK, CHUNK_VOLUME, NET, NET_OPCODE, blockIndex } from '@voxelcraft/core-types'
-import { decodeChunkData, decodeChunkPayload, decodeFrame } from '@voxelcraft/net'
+import { setTimeout as sleep } from 'node:timers/promises'
+import {
+	BLOCK,
+	CHUNK_VOLUME,
+	NET,
+	NET_OPCODE,
+	SAVE_VERSION,
+	blockIndex,
+} from '@voxelcraft/core-types'
+import {
+	FrameSplitter,
+	decodeChunkData,
+	decodeChunkPayload,
+	decodeFrame,
+	encodeFrame,
+	encodeHello,
+	type NetFrame,
+} from '@voxelcraft/net'
 import { describe, expect, it } from 'vitest'
-import { createGameServer, defaultPort, startGameServer } from './start'
+import { createGameServer, defaultPort, startGameServer, withDefaultStreamer } from './start'
+import { createChunkStreamer } from './stream'
+
+/** Polls instead of racing events, which keeps these tests flat and readable. */
+async function waitUntil(done: () => boolean, timeoutMs = 15_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs
+	while (!done()) {
+		if (Date.now() > deadline) throw new Error('start.test: the server never got there in time')
+		await sleep(5)
+	}
+}
 
 describe('defaultPort', () => {
 	it('falls back to the frozen default port', () => {
@@ -20,6 +46,26 @@ describe('defaultPort', () => {
 		expect(defaultPort({ PORT: 'abc' })).toBe(NET.defaultPort)
 		expect(defaultPort({ PORT: '99999' })).toBe(NET.defaultPort)
 		expect(defaultPort({ PORT: '-1' })).toBe(NET.defaultPort)
+	})
+})
+
+describe('withDefaultStreamer', () => {
+	it('hands a real server a streamer that actually queues columns', () => {
+		const { streamer } = withDefaultStreamer({})
+		expect(streamer).toBeDefined()
+		if (streamer === undefined) return
+		streamer.track(1, 0, 0)
+		// The first next() only primes the clock; the budget pays out after it.
+		expect(streamer.next(1, 0)).toEqual([])
+		const first = streamer.next(1, 1000)
+		expect(first.length).toBeGreaterThan(0)
+		// Nearest first: the column the player stands in leads the queue.
+		expect(first[0]).toEqual({ cx: 0, cz: 0 })
+	})
+
+	it('never overrides a streamer the caller injected', () => {
+		const mine = createChunkStreamer({ radius: 0 })
+		expect(withDefaultStreamer({ streamer: mine }).streamer).toBe(mine)
 	})
 })
 
@@ -79,4 +125,37 @@ describe('startGameServer', () => {
 			await second.close()
 		}
 	})
+
+	it('streams chunks to a client without being handed a streamer', async () => {
+		// No streamer option: this is exactly what main.ts boots in production.
+		const running = await startGameServer({ port: 0, seed: 21 })
+		const socket = new WebSocket(running.url)
+		socket.binaryType = 'arraybuffer'
+		const frames: NetFrame[] = []
+		const splitter = new FrameSplitter()
+		socket.addEventListener('message', (event) => {
+			if (!(event.data instanceof ArrayBuffer)) return
+			for (const frame of splitter.push(new Uint8Array(event.data))) frames.push(frame)
+		})
+		try {
+			await waitUntil(() => socket.readyState !== WebSocket.CONNECTING)
+			expect(socket.readyState).toBe(WebSocket.OPEN)
+			const hello = encodeHello({
+				protocolVersion: NET.protocolVersion,
+				playerName: 'solo',
+				saveVersion: SAVE_VERSION,
+			})
+			socket.send(encodeFrame(NET_OPCODE.Hello, hello))
+			await waitUntil(() => frames.some((frame) => frame.opcode === NET_OPCODE.ChunkData))
+			const frame = frames.find((candidate) => candidate.opcode === NET_OPCODE.ChunkData)
+			expect(frame).toBeDefined()
+			if (frame === undefined) return
+			const chunk = decodeChunkData(frame.payload)
+			expect({ cx: chunk.cx, cz: chunk.cz }).toEqual({ cx: 0, cz: 0 })
+			expect(decodeChunkPayload(chunk.bytes).blocks).toHaveLength(CHUNK_VOLUME)
+		} finally {
+			socket.close()
+			await running.close()
+		}
+	}, 20_000)
 })

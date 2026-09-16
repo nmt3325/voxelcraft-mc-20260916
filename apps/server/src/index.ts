@@ -7,6 +7,7 @@
 export * from './gameServer'
 export * from './movement'
 export * from './start'
+export * from './stream'
 export * from './tick'
 export * from './types'
 export * from './world'
