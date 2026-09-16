@@ -7,7 +7,13 @@ import {
 	setPaddedBlock,
 } from '../mesher/padded'
 import { createMesherPool } from '../worker/pool'
-import { collectTransferables, createMesherWorkerState, handleMesherMessage } from '../worker/protocol'
+import {
+	collectTransferables,
+	createMesherWorkerState,
+	handleMesherMessage,
+} from '../worker/protocol'
+
+type MesherMessage = Parameters<typeof handleMesherMessage>[1]
 
 function request(revision: number, fill?: (blocks: Uint16Array) => void) {
 	const padded = createEmptyPadded()
@@ -25,6 +31,29 @@ function request(revision: number, fill?: (blocks: Uint16Array) => void) {
 
 const oneStone = (blocks: Uint16Array): void => {
 	setPaddedBlock(blocks, 1, 1, 1, BLOCK.STONE)
+}
+
+/**
+ * In-process stand-in for a real Worker, so the pool's worker path and its
+ * telemetry can be covered without a bundler or a browser.
+ */
+class FakeMesherWorker {
+	onmessage: ((event: MessageEvent) => void) | null = null
+	onerror: ((event: unknown) => void) | null = null
+	terminated = false
+	private readonly state = createMesherWorkerState()
+
+	postMessage(message: MesherMessage): void {
+		const response = handleMesherMessage(this.state, message)
+		if (response === null) return
+		queueMicrotask(() => {
+			this.onmessage?.({ data: response } as unknown as MessageEvent)
+		})
+	}
+
+	terminate(): void {
+		this.terminated = true
+	}
 }
 
 describe('mesher worker protocol', () => {
@@ -67,13 +96,19 @@ describe('mesher pool', () => {
 	it('falls back to inline meshing without workers', async () => {
 		const pool = createMesherPool({ inline: true })
 		expect(pool.stats().inline).toBe(true)
+		expect(pool.stats().workers).toBe(0)
 
 		const response = await new Promise<MesherResponse>((resolve) => {
 			pool.request(request(1, oneStone), resolve)
 		})
 		expect(response.type).toBe('mesh')
-		expect(pool.stats().meshed).toBe(1)
-		expect(pool.stats().pending).toBe(0)
+		const stats = pool.stats()
+		expect(stats.meshed).toBe(1)
+		expect(stats.pending).toBe(0)
+		expect(stats.requested).toBe(1)
+		// The counters have to name the main thread as the source of this mesh.
+		expect(stats.inlineMeshed).toBe(1)
+		expect(stats.workerMeshed).toBe(0)
 		pool.dispose()
 	})
 
@@ -87,5 +122,34 @@ describe('mesher pool', () => {
 		expect(response).toEqual({ type: 'skipped', key, reason: 'cancelled' })
 		expect(pool.stats().skipped).toBe(1)
 		pool.dispose()
+	})
+
+	it('counts worker meshing apart from the inline fallback', async () => {
+		const fakes: FakeMesherWorker[] = []
+		const pool = createMesherPool({
+			workerCount: 2,
+			createWorker: () => {
+				const fake = new FakeMesherWorker()
+				fakes.push(fake)
+				return fake as unknown as Worker
+			},
+		})
+		expect(pool.stats().workers).toBe(2)
+		expect(pool.stats().inline).toBe(false)
+
+		const response = await new Promise<MesherResponse>((resolve) => {
+			pool.request(request(1, oneStone), resolve)
+		})
+		expect(response.type).toBe('mesh')
+		const stats = pool.stats()
+		expect(stats.meshed).toBe(1)
+		expect(stats.workerMeshed).toBe(1)
+		expect(stats.inlineMeshed).toBe(0)
+		expect(stats.errors).toBe(0)
+		expect(stats.pending).toBe(0)
+
+		pool.dispose()
+		expect(fakes).toHaveLength(2)
+		expect(fakes.every((fake) => fake.terminated)).toBe(true)
 	})
 })

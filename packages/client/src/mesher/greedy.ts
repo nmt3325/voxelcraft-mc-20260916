@@ -56,8 +56,13 @@ const LAYER_ORDER: readonly RenderLayer[] = [
 	RENDER_LAYER.Cutout,
 	RENDER_LAYER.Translucent,
 ]
-/** Uint16 index buffers cannot address more than 65536 vertices. */
-const MAX_VERTICES = 65532
+/**
+ * Uint16 index buffers cannot address more than 65536 vertices. A layer that
+ * would exceed that limit is split into several draw batches instead of having
+ * the overflow dropped (review blocker H-04). 65532 is the largest multiple of
+ * 4 below the limit, so a quad never straddles two batches.
+ */
+export const MAX_VERTICES_PER_BATCH = 65532
 const UNIT = 16
 
 class LayerBuilder {
@@ -67,13 +72,41 @@ class LayerBuilder {
 	indexCount = 0
 	quads = 0
 
-	constructor(capacityQuads: number) {
+	private readonly batches: MeshBuffer[] = []
+
+	constructor(
+		private readonly layer: RenderLayer,
+		capacityQuads: number,
+	) {
 		this.vertices = new Uint16Array(capacityQuads * 4 * VERTEX_STRIDE_U16)
 		this.indices = new Uint16Array(capacityQuads * 6)
 	}
 
-	canPush(): boolean {
-		return this.vertexCount + 4 <= MAX_VERTICES
+	/**
+	 * Closes the open batch when one more quad would push the vertex count past
+	 * the Uint16 index range. Called before a quad's base index is captured, so a
+	 * quad is never split across two batches.
+	 */
+	beginQuad(): void {
+		if (this.vertexCount + 4 > MAX_VERTICES_PER_BATCH) this.closeBatch()
+	}
+
+	private closeBatch(): void {
+		if (this.vertexCount === 0) return
+		const usedVertexWords = this.vertexCount * VERTEX_STRIDE_U16
+		const interleaved = new ArrayBuffer(usedVertexWords * 2)
+		new Uint16Array(interleaved).set(this.vertices.subarray(0, usedVertexWords))
+		const index = new ArrayBuffer(this.indexCount * 2)
+		new Uint16Array(index).set(this.indices.subarray(0, this.indexCount))
+		this.batches.push({
+			layer: this.layer,
+			interleaved,
+			index,
+			vertexCount: this.vertexCount,
+			indexCount: this.indexCount,
+		})
+		this.vertexCount = 0
+		this.indexCount = 0
 	}
 
 	private reserve(): void {
@@ -135,25 +168,20 @@ class LayerBuilder {
 		this.quads++
 	}
 
-	toBuffer(layer: RenderLayer): MeshBuffer | null {
-		if (this.vertexCount === 0) return null
-		const usedVertexWords = this.vertexCount * VERTEX_STRIDE_U16
-		const interleaved = new ArrayBuffer(usedVertexWords * 2)
-		new Uint16Array(interleaved).set(this.vertices.subarray(0, usedVertexWords))
-		const index = new ArrayBuffer(this.indexCount * 2)
-		new Uint16Array(index).set(this.indices.subarray(0, this.indexCount))
-		return {
-			layer,
-			interleaved,
-			index,
-			vertexCount: this.vertexCount,
-			indexCount: this.indexCount,
-		}
+	/** Every finished draw batch for this layer, in emission order. */
+	toBuffers(): readonly MeshBuffer[] {
+		this.closeBatch()
+		return this.batches
 	}
 }
 
 /** Contract AO formula: 3 - (side1 + side2 + corner). */
-function cornerAo(blocks: Uint16Array, neighbour: number, offsetU: number, offsetV: number): number {
+function cornerAo(
+	blocks: Uint16Array,
+	neighbour: number,
+	offsetU: number,
+	offsetV: number,
+): number {
 	const side1 = isOpaqueId(blocks[neighbour + offsetU]) ? 1 : 0
 	const side2 = isOpaqueId(blocks[neighbour + offsetV]) ? 1 : 0
 	const corner = isOpaqueId(blocks[neighbour + offsetU + offsetV]) ? 1 : 0
@@ -222,6 +250,7 @@ function emitQuad(
 	const ao3 = (aoPacked >> 6) & 3
 	// Flip the triangle split so the darker diagonal stays continuous.
 	const flip = ao0 + ao2 > ao1 + ao3
+	builder.beginQuad()
 	const base = builder.vertexCount
 	const position = [0, 0, 0]
 	for (let slot = 0; slot < 4; slot++) {
@@ -254,8 +283,10 @@ export interface MeshDebugInfo {
 	faceArea: number
 	greedyQuads: number
 	crossQuads: number
-	/** Quads skipped because the Uint16 index range was exhausted. */
+	/** Always 0: an overflowing layer is split into extra batches, never dropped. */
 	droppedQuads: number
+	/** Draw batches emitted in total; exceeds the layer count when a layer split. */
+	batches: number
 }
 
 export function meshSectionWithDebug(request: MeshRequest): {
@@ -268,7 +299,11 @@ export function meshSectionWithDebug(request: MeshRequest): {
 	const useAo = request.flags.ao
 	const smoothLight = request.flags.smoothLight
 
-	const builders = [new LayerBuilder(512), new LayerBuilder(64), new LayerBuilder(64)]
+	const builders = [
+		new LayerBuilder(RENDER_LAYER.Opaque, 512),
+		new LayerBuilder(RENDER_LAYER.Cutout, 64),
+		new LayerBuilder(RENDER_LAYER.Translucent, 64),
+	]
 
 	const maskOn = new Uint8Array(S * S)
 	const maskTex = new Int32Array(S * S)
@@ -288,7 +323,8 @@ export function meshSectionWithDebug(request: MeshRequest): {
 	let faceArea = 0
 	let greedyQuads = 0
 	let crossQuads = 0
-	let droppedQuads = 0
+	// H-04: overflow is split into extra draw batches, so nothing is ever dropped.
+	const droppedQuads = 0
 
 	for (let face = 0; face < 6; face++) {
 		const axis = AXIS_OF_FACE[face]
@@ -361,29 +397,25 @@ export function meshSectionWithDebug(request: MeshRequest): {
 						height++
 					}
 					const builder = builders[maskLayer[m]]
-					if (builder.canPush()) {
-						emitQuad(
-							builder,
-							face,
-							axis,
-							uAxis,
-							vAxis,
-							order,
-							(slice + (sign > 0 ? 1 : 0)) * UNIT,
-							ju * UNIT,
-							width * UNIT,
-							jv * UNIT,
-							height * UNIT,
-							maskTex[m],
-							maskTint[m],
-							maskAo[m],
-							maskLight[m],
-						)
-						faceArea += width * height
-						greedyQuads++
-					} else {
-						droppedQuads++
-					}
+					emitQuad(
+						builder,
+						face,
+						axis,
+						uAxis,
+						vAxis,
+						order,
+						(slice + (sign > 0 ? 1 : 0)) * UNIT,
+						ju * UNIT,
+						width * UNIT,
+						jv * UNIT,
+						height * UNIT,
+						maskTex[m],
+						maskTint[m],
+						maskAo[m],
+						maskLight[m],
+					)
+					faceArea += width * height
+					greedyQuads++
 					for (let dv = 0; dv < height; dv++) {
 						const rowBase = (jv + dv) * S + ju
 						for (let du = 0; du < width; du++) maskOn[rowBase + du] = 0
@@ -401,8 +433,7 @@ export function meshSectionWithDebug(request: MeshRequest): {
 	for (let y = 0; y < S; y++) {
 		for (let z = 0; z < S; z++) {
 			for (let x = 0; x < S; x++) {
-				const index =
-					PADDED_BASE + x * PADDED_STRIDE_X + y * PADDED_STRIDE_Y + z * PADDED_STRIDE_Z
+				const index = PADDED_BASE + x * PADDED_STRIDE_X + y * PADDED_STRIDE_Y + z * PADDED_STRIDE_Z
 				const id = blocks[index]
 				if (id === 0) continue
 				const appearance = appearanceOf(id)
@@ -415,10 +446,6 @@ export function meshSectionWithDebug(request: MeshRequest): {
 				cellCoords[1] = y
 				cellCoords[2] = z
 				for (const face of CROSS_FACES) {
-					if (!builder.canPush()) {
-						droppedQuads++
-						continue
-					}
 					const axis = AXIS_OF_FACE[face]
 					const uAxis = (axis + 1) % 3
 					const vAxis = (axis + 2) % 3
@@ -450,8 +477,7 @@ export function meshSectionWithDebug(request: MeshRequest): {
 	for (let i = 0; i < LAYER_ORDER.length; i++) {
 		const builder = builders[i]
 		quads += builder.quads
-		const buffer = builder.toBuffer(LAYER_ORDER[i])
-		if (buffer) buffers.push(buffer)
+		for (const buffer of builder.toBuffers()) buffers.push(buffer)
 	}
 
 	const result: MeshResult = {
@@ -463,7 +489,10 @@ export function meshSectionWithDebug(request: MeshRequest): {
 		buffers,
 		stats: { quads, meshMs: nowMs() - started },
 	}
-	return { result, debug: { faceArea, greedyQuads, crossQuads, droppedQuads } }
+	return {
+		result,
+		debug: { faceArea, greedyQuads, crossQuads, droppedQuads, batches: buffers.length },
+	}
 }
 
 export function meshSection(request: MeshRequest): MeshResult {

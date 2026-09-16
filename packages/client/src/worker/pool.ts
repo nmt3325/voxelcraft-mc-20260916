@@ -1,4 +1,9 @@
-import { PERF, type MeshRequest, type MesherMessage, type MesherResponse } from '@voxelcraft/core-types'
+import {
+	PERF,
+	type MeshRequest,
+	type MesherMessage,
+	type MesherResponse,
+} from '@voxelcraft/core-types'
 import { createMesherWorkerState, handleMesherMessage } from './protocol'
 
 /**
@@ -13,6 +18,9 @@ import { createMesherWorkerState, handleMesherMessage } from './protocol'
  *   happens to be cross-origin isolated.
  * - Request buffers are transferred, so callers must hand over freshly allocated
  *   padded arrays (see `createEmptyPadded`).
+ * - `stats()` counts worker results and inline results separately, so a caller
+ *   (and the E2E suite) can tell a real worker run from a silent fallback to
+ *   main-thread meshing.
  */
 
 export type MesherResponseHandler = (response: MesherResponse) => void
@@ -25,12 +33,20 @@ export interface MesherPoolOptions {
 }
 
 export interface MesherPoolStats {
+	/** Live workers owned by the pool. Zero means everything is meshed inline. */
 	workers: number
+	/** True while the pool has no worker and meshes on the calling thread. */
 	inline: boolean
 	pending: number
 	meshed: number
 	skipped: number
 	errors: number
+	/** Mesh requests accepted by the pool. */
+	requested: number
+	/** Accepted mesh results that were produced on the calling thread. */
+	inlineMeshed: number
+	/** Accepted mesh results that were produced inside a worker. */
+	workerMeshed: number
 }
 
 export interface MesherPool {
@@ -59,17 +75,23 @@ interface WorkerSlot {
 	inflight: number
 }
 
+/** Thread a settled response was meshed on. */
+type MeshSource = 'worker' | 'inline'
+
 export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 	const handlers = new Map<string, MesherResponseHandler>()
 	const latestRevision = new Map<string, number>()
 	const inlineState = createMesherWorkerState()
 	const slots: WorkerSlot[] = []
+	let requested = 0
 	let meshed = 0
+	let inlineMeshed = 0
+	let workerMeshed = 0
 	let skipped = 0
 	let errors = 0
 	let disposed = false
 
-	const settle = (response: MesherResponse): void => {
+	const settle = (response: MesherResponse, source: MeshSource): void => {
 		const key = responseKey(response)
 		if (response.type === 'mesh') {
 			const latest = latestRevision.get(key)
@@ -78,6 +100,8 @@ export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 				return
 			}
 			meshed++
+			if (source === 'inline') inlineMeshed++
+			else workerMeshed++
 		} else if (response.type === 'error') {
 			errors++
 		} else {
@@ -101,7 +125,7 @@ export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 					const slot: WorkerSlot = { worker: create(), inflight: 0 }
 					slot.worker.onmessage = (event: MessageEvent): void => {
 						slot.inflight = Math.max(0, slot.inflight - 1)
-						settle(event.data as MesherResponse)
+						settle(event.data as MesherResponse, 'worker')
 					}
 					slot.worker.onerror = (): void => {
 						slot.inflight = 0
@@ -127,6 +151,7 @@ export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 	return {
 		request(request: MeshRequest, onResponse: MesherResponseHandler): void {
 			if (disposed) return
+			requested++
 			handlers.set(request.key, onResponse)
 			latestRevision.set(request.key, request.revision)
 			const message: MesherMessage = { type: 'mesh', request }
@@ -134,7 +159,7 @@ export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 				const response = handleMesherMessage(inlineState, message)
 				// Report asynchronously so callers see the same ordering either way.
 				queueMicrotask(() => {
-					if (response !== null && !disposed) settle(response)
+					if (response !== null && !disposed) settle(response, 'inline')
 				})
 				return
 			}
@@ -163,6 +188,9 @@ export function createMesherPool(options: MesherPoolOptions = {}): MesherPool {
 				meshed,
 				skipped,
 				errors,
+				requested,
+				inlineMeshed,
+				workerMeshed,
 			}
 		},
 		dispose(): void {
