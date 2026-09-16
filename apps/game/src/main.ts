@@ -79,6 +79,7 @@ import {
 } from '@voxelcraft/sim'
 import { loadGameAssets, type GameAssets } from './assets'
 import { PlayerRuntime } from './player'
+import { createPointerLock } from './pointerLock'
 import { buildSnapshot, createCreativeInventory, heldBlockId } from './ui-bridge'
 import { ChunkWorld } from './world/chunkWorld'
 import { createSaveMeta, openWorldPersistence } from './world/store'
@@ -831,22 +832,53 @@ async function boot(assets: GameAssets): Promise<void> {
 		audio.setVolume(value)
 	}
 
+	// --- pointer lock --------------------------------------------------------
+
+	// The mouse is captured while playing and handed back on every other screen.
+	// `onLost` is the half that was missing: Chrome and Safari swallow the
+	// `Escape` keypress that ends a lock, so a release the player asked for is
+	// only ever visible through `pointerlockchange`. Pausing there is what keeps
+	// the cursor usable instead of the next click silently re-capturing it.
+	const pointer = createPointerLock({
+		target: canvas,
+		doc: document,
+		onLost: () => {
+			if (screen !== 'playing') return
+			screen = 'pause'
+			// Keys held when the lock went away are not held any more.
+			pressed.clear()
+			player.clearMove()
+		},
+		onDenied: (message) => {
+			console.warn('[voxelcraft] pointer lock denied:', message)
+		},
+	})
+
+	/** Every screen change goes through here, so the cursor follows the screen. */
+	const setScreen = (next: UiScreen): void => {
+		if (screen === next) return
+		screen = next
+		if (next !== 'playing') pointer.release()
+	}
+
 	const host: UiHost = {
 		onSelectHotbar(index: number): void {
 			selectHotbar(player.inventory, index)
 		},
 		onToggleInventory(): void {
-			screen = screen === 'inventory' ? 'playing' : 'inventory'
+			setScreen(screen === 'inventory' ? 'playing' : 'inventory')
 		},
 		onCloseScreen(): void {
 			if (screen === 'enchanting') progression.closeTable()
-			screen = 'playing'
+			// `Esc` while playing pauses, which is also the in-game way to get the
+			// mouse back; on any other screen it steps back into the game.
+			setScreen(screen === 'playing' ? 'pause' : 'playing')
 		},
 		onResume(): void {
-			screen = 'playing'
+			setScreen('playing')
 		},
 		onOpenSettings(): void {
-			screen = 'settings'
+			setScreen('settings')
 		},
 		onChangeSetting(key: keyof UiSettings, value: number | boolean): void {
 			applySetting(key, value)
@@ -883,7 +915,7 @@ async function boot(assets: GameAssets): Promise<void> {
 		},
 		onQuit(): void {
 			void saveWorld()
-			screen = 'title'
+			setScreen('title')
 		},
 		onCraft(): void {
 			if (craftFromInventory(player.inventory) !== null) playSound('place_generic')
@@ -996,8 +1028,9 @@ async function boot(assets: GameAssets): Promise<void> {
 	})
 	canvas.addEventListener('mousedown', (event) => {
 		if (testMode || screen !== 'playing') return
-		if (document.pointerLockElement !== canvas) {
-			void canvas.requestPointerLock()
+		// The first click captures the mouse; it never mines in the same gesture.
+		if (!pointer.isLocked()) {
+			pointer.capture()
 			return
 		}
 		if (event.button === 2) useTargeted()
@@ -1007,7 +1040,7 @@ async function boot(assets: GameAssets): Promise<void> {
 		event.preventDefault()
 	})
 	window.addEventListener('mousemove', (event) => {
-		if (document.pointerLockElement !== canvas) return
+		if (!pointer.isLocked()) return
 		player.yaw -= event.movementX * settings.sensitivity
 		player.pitch = Math.max(
 			-PITCH_LIMIT,
