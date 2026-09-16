@@ -9,6 +9,7 @@ import {
 } from '@voxelcraft/core-types'
 import { BLOCK_DEF_COUNT, BLOCK_DEFS } from './blockDefs'
 import { BLOCKS, createBlockRegistry, createDefaultBlockRegistry } from './registry'
+import { ALL_BLOCK_DEF_COUNT } from '../v2blocks/blockDefsV2'
 import { ITEMS } from '../items/registry'
 
 const BLOCK_KEYS = Object.keys(BLOCK) as Array<keyof typeof BLOCK>
@@ -114,8 +115,8 @@ describe('BLOCK_DEFS', () => {
 
 describe('block registry', () => {
 	it('round trips by id and by name', () => {
-		expect(BLOCKS.count()).toBe(BLOCK_DEF_COUNT)
-		expect(BLOCKS.all()).toHaveLength(BLOCK_DEF_COUNT)
+		expect(BLOCKS.count()).toBe(ALL_BLOCK_DEF_COUNT)
+		expect(BLOCKS.all()).toHaveLength(ALL_BLOCK_DEF_COUNT)
 		for (const def of BLOCK_DEFS) {
 			expect(BLOCKS.byId(def.id)).toBe(def)
 			expect(BLOCKS.byName(def.name)).toBe(def)
@@ -144,7 +145,7 @@ describe('block registry', () => {
 
 	it('builds independent registries', () => {
 		const fresh = createDefaultBlockRegistry()
-		expect(fresh.count()).toBe(BLOCK_DEF_COUNT)
+		expect(fresh.count()).toBe(ALL_BLOCK_DEF_COUNT)
 		expect(fresh).not.toBe(BLOCKS)
 
 		const empty = createBlockRegistry()
