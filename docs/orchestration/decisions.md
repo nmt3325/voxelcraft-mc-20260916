@@ -205,3 +205,22 @@ generation, break/place, save/load, crafting and the E2E suite are never reduced
 
 - v1.1.0 の zip で Litterbox（72h）と Catbox を再試行したが、Litterbox は `HTTP=500`（BunkerWeb のエラーピージ）、Catbox は `HTTP=412 Invalid uploader` で失敗。
 - 判断: D-049 / D-053 を維持し、GitHub Release のアセットを成果物の正典 URL とする。v1.1.0 は `curl -sIL` で HTTP 200 / content-length 1263077 を確認し、実ダウンロードとバイト一致を検証済み。
+
+## D-059 rev3 レビューの採否（net / server、2026-09-16）
+
+- 対象: `docs/reviews/rev3.md`（統合 head `9573084` での独立レビュー、verdict = request changes）。
+- 全件 accept。担当は `fix-c`（ブランチ `feat/mc-20260916/fix-c`、env `linux-snnxpyz0`、所有パス `packages/net/**` `apps/server/**` `tests/bench/**`）。
+  - B-1 移動速度制限が事実上存在しない。`onInput` がメッセージ単位で移動を適用し、`input.tick < lastTick` だけを拒否するため、同一 tick の Input 200 通で 8 server tick に 43.17 ブロック進む（予算 0.21585 ブロック/tick、約 25 倍）。tick 単位の累積予算と重複 tick 拒否を入れ、回帰テストを追加する。
+  - B-2 クライアントが無境界なチャンク生成を強制できる。置換検証が y のみで、拒否経路でもブロックを読み戻して列を生成・永続キャッシュする（到達外 300 回で列 3 → 303、RSS 93.6 → 150.7 MiB）。ワールド読み出し前に reach とストリーム半径を検証し、上限付き列キャッシュを入れる。
+  - M-1 フレームヘッダの version 未検証、M-2 受信レート制限と tick 作業予算の不在、M-3 `ChunkColumn.revision` の未使用、M-4 `sent` 集合が増え続け再送を永久に防ぐ件、M-5 `tests/bench/results/bench.json` の陳腐化と `lightSeedAndStitchMs` の閾値欠落。
+- 補足: マルチプレイは D-046 で LAN / 開発用の権威サーバと位置付けているため、これらの修正は v1 完了条件の前提ではなく v1.2 の強化として扱う。ただし公開サーバとして使える印象を与えないよう README の位置付けを維持する。
+
+## D-060 rev4 レビューの採否（gameplay / client / app、2026-09-16）
+
+- 対象: `docs/reviews/rev4.md`（統合 head `9573084` での独立レビュー、verdict = request changes）。7 ゲートは全て exit 0 だが、ゲートがアプリ層の到達性を検出できないという指摘を採用する。
+- B-01 accept。担当は `fix-d`（ブランチ `feat/mc-20260916/fix-d`、env `linux-hs3pczf0`、所有パス `packages/gameplay/**` `packages/sim/**`）。BLOCK_V2 18 件と ITEM_V2 18 件が既定レジストリに未登録、既定レシピ 53 対 v2 レジストリ 58、sim ブロック表が id 64 以上を AIR にフォールバックするため、seed 1337 の村（ブロック x 72 z 632、126 voxel）が破壊も設置もできず光と流体の計算も誤る。
+- 到達性の major（XP / エンチャント / 農業 / 繁殖 に `packages/gameplay` 外の呼び出しがない、ネザーとポータルが到達不能、net がクライアントから未使用）は accept。既に走っている `wire-b`（`apps/game/**` `packages/client/**` `tests/e2e/**`）に集約し、機能領域ごとの到達性 E2E を追加する。
+- defer: 音声再生のゲート化、`drawCalls` の自明的値と `droppedQuads: 0` のハードコード、`ParticlePool` の O(live) 走査、`apps/game` の `@voxelcraft/assets-gen` 依存整理は wire-b の裁量とし、本ラウンドでは完了条件にしない。
+- bench baseline の陳腐化と `lightSeedAndStitchMs` の閾値欠落は rev3 と重複するため D-059 の M-5（fix-c）に統合した。
+- レビュー sha ドリフト（起動時 `dae16174`、実測 `9573084`）は仕様通り。レビュアは常に自分で `origin/integration/mc-20260916` を fetch して実 head を報告する。
+- レビュー成果物は `docs/reviews/rev3.md` と `docs/reviews/rev4.md` として統合ブランチにマージ済み（ゲート job `6d65cba9cb6c4726` と `d0dee49ed71b429f`、統合 head `9aab3290`）。
