@@ -1,8 +1,20 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 
+// Procedurally generated textures and sounds are emitted by
+// packages/assets-gen (atlas.png, atlas.json, sounds.json, sounds/*.wav) and
+// served as static files. They are build output, not committed assets, so the
+// build records whether they exist: the client must not request a missing file,
+// because the browser reports a 404 as a console error and the E2E suite
+// asserts that the page logs none.
+const generatedDir = fileURLToPath(new URL('../../packages/assets-gen/generated', import.meta.url))
+const hasGeneratedAssets = existsSync(`${generatedDir}/atlas.json`)
+
 export default defineConfig({
   base: './',
+  publicDir: hasGeneratedAssets ? generatedDir : false,
+  define: { __VC_HAS_ASSETS__: JSON.stringify(hasGeneratedAssets) },
   build: {
     outDir: fileURLToPath(new URL('../../dist', import.meta.url)),
     emptyOutDir: true,

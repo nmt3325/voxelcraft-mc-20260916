@@ -1,6 +1,81 @@
 {
-  "version": 0,
-  "scaffold": true,
-  "note": "Replaced by the real harness: chunk gen + meshing at render distance 8, and sim tick cost.",
-  "metrics": []
+  "version": 1,
+  "task": "client-c",
+  "generatedAt": "2026-09-15T18:55:28.067Z",
+  "contractVersion": "1.0.0",
+  "failFactor": 3,
+  "meta": {
+    "seed": 1337,
+    "renderDistance": 8,
+    "node": "v22.23.2",
+    "platform": "linux-x64",
+    "fixtureSubstitution": {
+      "used": true,
+      "reason": "packages/world, packages/sim and packages/gameplay are still stubs, so chunk generation and the sim tick are measured against deterministic bench fixtures built on the shared hashU32 / hash01 primitives instead of the real systems.",
+      "terrain": {
+        "module": "tests/bench/src/fixtures/terrain.ts",
+        "version": "bench-terrain-1"
+      },
+      "simTick": {
+        "module": "tests/bench/src/fixtures/tick.ts",
+        "version": "bench-tick-1"
+      }
+    },
+    "mesher": {
+      "source": "client",
+      "version": "1",
+      "fallbackUsed": false,
+      "reason": null
+    },
+    "sample": {
+      "chunksGenerated": 289,
+      "chunksMeshed": 32,
+      "sectionsMeshed": 160,
+      "sectionsSkippedEmpty": 352,
+      "quadsEmitted": 65773,
+      "tickEntities": 512,
+      "ticks": 600
+    },
+    "totals": {
+      "chunkGenMs": 78.46,
+      "meshMs": 105.597,
+      "simTickMs": 40.749
+    }
+  },
+  "metrics": [
+    {
+      "name": "chunkGenAvgMs",
+      "unit": "ms",
+      "value": 0.271,
+      "threshold": 6,
+      "failThreshold": 18,
+      "status": "ok"
+    },
+    {
+      "name": "chunkMeshAvgMs",
+      "unit": "ms",
+      "value": 3.3,
+      "threshold": 12,
+      "failThreshold": 36,
+      "status": "ok"
+    },
+    {
+      "name": "simTickAvgMs",
+      "unit": "ms",
+      "value": 0.068,
+      "threshold": 8,
+      "failThreshold": 24,
+      "status": "ok"
+    }
+  ],
+  "informational": [
+    {
+      "name": "sectionMeshAvgMs",
+      "unit": "ms",
+      "value": 0.66,
+      "budget": 1.5
+    }
+  ],
+  "warnings": [],
+  "failures": []
 }

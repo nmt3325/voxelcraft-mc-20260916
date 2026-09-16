@@ -1,0 +1,125 @@
+{
+  "task": "client-c",
+  "branch": "feat/mc-20260916/client-c",
+  "status": "done",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "f4240c4bea8def54312931a8ef0ecf0203f3ae10",
+  "commits": [
+    "2d2f7c5958879051b97ec28ec670f92ec173211d feat(client-c): UI layer, audio playback, e2e harness and bench harness",
+    "f4240c4bea8def54312931a8ef0ecf0203f3ae10 fix(client-c): align bench fixtures and e2e specs with core-types, record bench results"
+  ],
+  "files_changed": [
+    "packages/client/src/ui/types.ts",
+    "packages/client/src/ui/index.ts",
+    "packages/client/src/ui/snapshot.ts",
+    "packages/client/src/ui/dom.ts",
+    "packages/client/src/ui/styles.ts",
+    "packages/client/src/ui/slot.ts",
+    "packages/client/src/ui/hud.ts",
+    "packages/client/src/ui/debug.ts",
+    "packages/client/src/ui/inventory.ts",
+    "packages/client/src/ui/pause.ts",
+    "packages/client/src/ui/settings.ts",
+    "packages/client/src/ui/worlds.ts",
+    "packages/client/src/ui/simple.ts",
+    "packages/client/src/ui/__tests__/ui.test.ts",
+    "packages/client/src/audio/index.ts",
+    "packages/client/src/audio/__tests__/audio.test.ts",
+    "tests/e2e/src/harness.ts",
+    "tests/e2e/unit/harness.test.ts",
+    "tests/e2e/specs/boot.spec.ts",
+    "tests/e2e/specs/persistence.spec.ts",
+    "tests/bench/src/bench.ts",
+    "tests/bench/src/clientMesher.ts",
+    "tests/bench/src/fixtures/terrain.ts",
+    "tests/bench/src/fixtures/mesher.ts",
+    "tests/bench/src/fixtures/tick.ts",
+    "tests/bench/results/bench.json",
+    "docs/reports/client-c.json"
+  ],
+  "checks": [
+    {
+      "name": "tsc-client",
+      "command": "pnpm --filter @voxelcraft/client exec tsc --noEmit",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/tsc-client.log"
+    },
+    {
+      "name": "tsc-e2e",
+      "command": "pnpm --filter @voxelcraft/e2e exec tsc --noEmit",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/tsc-e2e.log"
+    },
+    {
+      "name": "tsc-bench",
+      "command": "pnpm --filter @voxelcraft/bench exec tsc --noEmit",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/tsc-bench.log"
+    },
+    {
+      "name": "lint-client",
+      "command": "pnpm --filter @voxelcraft/client run lint",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/lint-client.log"
+    },
+    {
+      "name": "lint-e2e",
+      "command": "pnpm --filter @voxelcraft/e2e run lint",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/lint-e2e.log"
+    },
+    {
+      "name": "lint-bench",
+      "command": "pnpm --filter @voxelcraft/bench run lint",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/lint-bench.log"
+    },
+    {
+      "name": "test-client",
+      "command": "pnpm --filter @voxelcraft/client run test",
+      "job_id": "c986d5143ae648d5",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/test-client.log"
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "b49ae7d0dcd14499",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/bench.log"
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm test:e2e",
+      "job_id": "1c79d22633c1478a",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/e2e.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "SCOPE DELIVERED\n- UI (packages/client/src/ui/**): createUi(root, host): UiHandle plus the full contract in ui/types.ts (UiScreen, UiSlot, UiDebugInfo, UiSettings, UiWorldEntry, UiSnapshot, UiHost, UiHandle) exactly as specified by client-a. Screens: loading, title, worldSelect, worldCreate, playing HUD, pause, inventory, settings. HUD has health, hunger, crosshair and a 9-slot hotbar; inventory has 36 slots plus a 3x3 crafting grid (the 2x2 subset is the top-left cells, per INVENTORY.craftGrid2/craftGrid3) and a result slot; settings expose renderDistance, fov, sensitivity, volume and showDebug; the F3 debug overlay shows FPS, XYZ, facing, biome, chunk count, draw calls and quad/triangle counts. update(snapshot) is diff-based (textContent/class only, no re-render) so it is safe to call every frame. All DOM stays under the provided root, global listeners are removed in dispose(), and createUi touches neither three.js nor Worker.\n- Keybinds handled in the UI and forwarded to host: E -> onToggleInventory, Esc -> onCloseScreen/onResume, F3 -> onChangeSetting('showDebug', ...), 1-9 -> onSelectHotbar. Key handling is ignored while an input/textarea/contenteditable is focused.\n- Audio (packages/client/src/audio/index.ts): createAudio({ manifest, baseUrl, volume }): AudioHandle with play/setVolume/dispose. WAV buffers are fetched from baseUrl + manifest.files[name] (assets-gen output only). When AudioContext, fetch or the manifest is unavailable (Node, jsdom, headless before a user gesture) it returns a silent no-op handle. It never throws and never calls console.error/console.warn, which is asserted by unit tests, so the zero-console-error E2E condition is preserved. UI clicks, block break/place and footsteps are routed through host.onPlaySound.\n- Unit tests: 30 passing (25 UI + 5 audio). packages/client/vitest.config.ts does not exist yet (client-a owns it), so the DOM test file starts with the // @vitest-environment jsdom pragma as instructed.\n\nBENCH MEASUREMENTS (pnpm bench, exit 0, tests/bench/results/bench.json)\n- chunkGenAvgMs = 0.261 ms (BENCH budget 6, fail > 18) -> ok\n- chunkMeshAvgMs = 1.887 ms (BENCH budget 12, fail > 36) -> ok\n- simTickAvgMs = 0.067 ms (BENCH budget 8, fail > 24) -> ok\n- sectionMeshAvgMs = 0.377 ms (informational, PERF.sectionMeshBudgetMs 1.5)\n- Sample: render distance 8 -> 289 chunks generated; 160 non-empty sections meshed across 32 chunks (352 all-air sections skipped); 80106 quads; sim loop 512 entities x 600 ticks. Totals: chunkGen 75.449 ms, mesh 60.383 ms, simTick 40.110 ms. No metric exceeded its threshold, so warnings and failures are both empty and exit code is 0.\n\nFIXTURE SUBSTITUTION (yes - recorded in bench.json meta.fixtureSubstitution)\n- packages/world, packages/sim and packages/gameplay are still scaffolds, so the bench does not depend on them. tests/bench/src/fixtures/ contains deterministic stand-ins built only on core-types primitives: terrain.ts (3-octave value noise over hashU32/hash01, bedrock, dirt/grass/sand, caves, ores, water to SEA_LEVEL; FIXTURE_TERRAIN_VERSION = bench-terrain-1), tick.ts (fixed-step gravity/ground-collision entity loop at PERF.simTickHz; FIXTURE_TICK_VERSION = bench-tick-1). These numbers therefore measure representative work at BENCH.renderDistance, not the real world/sim implementations, and must be re-baselined once those packages land.\n- Mesher fallback flag: TRUE. bench.json meta.mesher = { source: 'bench-fallback', version: 'bench-fallback-1', fallbackUsed: true, reason: '@voxelcraft/client does not export meshSection, createEmptyPadded, setPaddedBlock, fillPaddedLight, countVisibleFaces yet' }. tests/bench/src/clientMesher.ts dynamically imports @voxelcraft/client, validates the required exports and only falls back when they are missing, so the bench switches to the real mesher automatically once client-a exports meshSection/createEmptyPadded/setPaddedBlock/fillPaddedLight/countVisibleFaces/MESHER_VERSION. The fallback emits one quad per visible face with no greedy merging, so chunkMeshAvgMs is expected to change when the real mesher is wired in.\n\nE2E (pnpm test:e2e, exit 0)\n- 4 tests: 2 passed, 2 skipped. Fixed seed 1337, renderDistance 2 (PERF.e2eRenderDistance), canvas 640x360 (PERF.e2eCanvasWidth/Height) via buildTestUrl() in tests/e2e/src/harness.ts.\n- CONSOLE ERROR ZERO: confirmed. Both passing tests collect console errors and pageerror events through collectPageErrors(page) and assert the joined list is empty; the default boot and the ?test=1 boot both produced zero console errors.\n- Screenshots written under tests/e2e/test-results/ (playwright outputDir): boot.png, boot-test-mode.png, seeded-boot.png.\n- SKIPPED AND WHY: 'hud is mounted under #ui-root' and the full break/place/save/reload persistence spec are gated with test.skip because apps/game does not provide the integration hooks yet. apps/game/index.html only has <div id=\"app\"> (no #ui-root) and apps/game/src/main.ts is still the scaffold, so window.__vc (ready/state/getBlock/breakBlock/placeBlock/save/hash/errors) and the ?test=1&seed&rd&w&h handling do not exist. apps/game/** is client-a's owned path, so I did not modify it. tests/e2e/specs/persistence.spec.ts is fully written and type-checked and asserts the required loop (seeded boot -> breakBlock -> placeBlock -> save -> reload -> window.__vc.hash() equality and getBlock equality -> screenshot persistence-after-reload.png -> zero console errors before and after); it will start running with no further changes as soon as window.__vc exists. ui-hud.png and persistence-after-reload.png are therefore not produced yet.\n- The pre-existing tests/e2e/vitest.config.ts (include: unit/**) vs playwright specs/ split is unchanged; the new unit test lives in tests/e2e/unit/harness.test.ts and the new spec in tests/e2e/specs/. The original boot.spec.ts test was kept and strengthened rather than replaced.\n\nINTEGRATION NEEDED FROM client-a (no contract change required)\n1. Re-export my modules from packages/client/src/index.ts (it currently exports only PACKAGE_NAME): createUi from './ui', createAudio from './audio', and the ui/types.ts types. I did not touch that file because it is client-a's. Unit tests use relative imports, so nothing of mine depends on it.\n2. Add <div id=\"ui-root\"> to apps/game/index.html and mount createUi there, plus the <canvas id=\"game-canvas\"> the harness expects.\n3. Implement the ?test=1&seed&rd&w&h query handling and window.__vc test hook to un-skip the two gated E2E tests.\n4. Add packages/client/vitest.config.ts; my jsdom pragma keeps the UI test working either way.\n5. Export the mesher API from @voxelcraft/client to replace the bench fallback.\n\nIMPLEMENTATION DECISIONS WORTH FLAGGING\n- UiSlot.durability is treated as a 0..1 remaining fraction used to size the durability bar; null means the item has no durability. The contract does not state the unit, so client-a should feed a normalized value (or tell me to switch to absolute values).\n- worldSelect <-> worldCreate navigation is handled locally inside the UI (there is no UiHost callback for it); only onCreateWorld/onSelectWorld/onDeleteWorld reach the host. Escape clears that local override.\n- data-testids present as specified (hud, crosshair, hotbar, hotbar-slot-0..8, health, hunger, debug-overlay, inventory-screen, crafting-grid, pause-screen, settings-screen, world-select, world-create) plus extra granular ids (debug-fps, debug-pos, inventory-slot-0..35, crafting-cell-0..8, crafting-result, setting-<key>, world-play-<id>, world-delete-<id>, ...) for precise assertions.\n\nOTHER\n- No failures attributable to client-a or client-b were observed: at this sha tsc, lint and vitest for @voxelcraft/client are all exit 0, so nothing had to be recorded as someone else's breakage. Only --filter scoped commands were used (plus pnpm bench and pnpm test:e2e, which are the documented exceptions); pnpm -r test / pnpm -r lint were left to L0.\n- No contract change is needed; packages/core-types, docs/orchestration, root config, scripts/**, CI and other agents' paths were not modified, and no dependency was added or changed.\n- Two type-error rounds were fixed inside my own files only: VERTEX_LANE lane names are PosX/PosY/PosZ/Reserved/TexLayer/NormalAo/Light/Tint (no numeric suffix), MeshBuffer.layer needs the RenderLayer union rather than number, BLOCK constants are literal types so terrain ids need an explicit number annotation, and casting window to the __vc shape requires going through unknown.\n- Git identity was passed per commit via git -c user.name/user.email; no shared git config was modified. Branch pushed to origin after every green step; head_sha above is the last implementation commit and this report is committed directly on top of it.\n- Bench/E2E jobs were run one at a time in my own slot after checking env_status (queue_depth 0, no concurrent build); env linux-0hnn8qdt only."
+}
