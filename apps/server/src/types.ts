@@ -30,12 +30,27 @@ export interface ServerWorld {
 	 */
 	hasColumn(cx: number, cz: number): boolean
 	block(x: number, y: number, z: number): BlockId
-	/** False when the coordinate is outside the buildable world. */
+	/**
+	 * Applies one accepted edit. False when the coordinate is outside the
+	 * buildable world, and false when the store cannot retain the write, for
+	 * instance when every resident column already holds an edit. A false
+	 * return means the edit did not happen, so the caller must not broadcast
+	 * it as a BlockChange.
+	 */
 	setBlock(x: number, y: number, z: number, block: BlockId): boolean
 	/** First free y above the highest non-air block of the column. */
 	surfaceY(x: number, z: number): number
 	/** How many columns are resident right now. Bounded by the store's cap. */
 	readonly loadedChunks: number
+	/**
+	 * The resident cap, for an implementation that has one. Optional so a
+	 * hand written world in a test does not have to invent cache accounting.
+	 */
+	readonly maxResidentColumns?: number
+	/** Resident columns pinned by an accepted edit. Never evicted. */
+	readonly pinnedColumns?: number
+	/** Writes refused because the store had no room to retain them. */
+	readonly refusedWrites?: number
 }
 
 export interface PlayerState {
