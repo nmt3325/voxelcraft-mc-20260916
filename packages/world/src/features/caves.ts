@@ -173,7 +173,14 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 	}
 
 	/** Completes the exact tunnel value on the eight corners of one cell. */
-	function fillTunnelCorners(base: number, ix: number, iy: number, iz: number, bx: number, bz: number): void {
+	function fillTunnelCorners(
+		base: number,
+		ix: number,
+		iy: number,
+		iz: number,
+		bx: number,
+		bz: number,
+	): void {
 		for (let dy = 0; dy <= 1; dy++) {
 			const wy = MIN_Y + (iy + dy) * step
 			const sy = wy * SQUASH
@@ -261,9 +268,7 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 				const inZ = hz >= 0 && hz < CHUNK_Z
 				for (let hx = -1; hx <= CHUNK_X; hx++) {
 					const inside = inZ && hx >= 0 && hx < CHUNK_X
-					const surfaceY = inside
-						? heights[(hz << 4) | hx]
-						: terrain.surfaceYAt(bx + hx, bz + hz)
+					const surfaceY = inside ? heights[(hz << 4) | hx] : terrain.surfaceYAt(bx + hx, bz + hz)
 					haloTop[haloIndex(hx, hz)] = crustTop(surfaceY)
 				}
 			}
@@ -395,9 +400,7 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 							const bias = d >= FADE_BLOCKS ? 0 : FADE_BY_DISTANCE[d]
 							let carve = cheeseBase + cheeseSpan * ty > CHEESE_THRESHOLD + bias
 							if (!carve && tunnelPossible) {
-								carve =
-									tunnelBase + tunnelSpan * ty >
-								TUNNEL_THRESHOLD + bias * TUNNEL_FADE_SCALE
+								carve = tunnelBase + tunnelSpan * ty > TUNNEL_THRESHOLD + bias * TUNNEL_FADE_SCALE
 							}
 							if (!carve) continue
 							const i = (y << 8) | colBase
