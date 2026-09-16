@@ -11,12 +11,12 @@ MAIN_BEFORE=$(git rev-parse origin/main)
 echo "INTEG=$INTEG"
 echo "MAIN_BEFORE=$MAIN_BEFORE"
 if ! git merge-base --is-ancestor "$MAIN_BEFORE" "$INTEG"; then echo NOT_FF; exit 64; fi
-PR_NUM=$(gh pr list --base main --head integration/mc-20260916 --state all --json number -q '.[0].number' 2>/dev/null)
+PR_NUM=$(gh pr list --base main --head integration/mc-20260916 --state open --json number -q '.[0].number' 2>/dev/null)
 if [ -z "${PR_NUM:-}" ]; then
   gh pr create --base main --head integration/mc-20260916 --title "${PR_TITLE:-VoxelCraft integration (mc-20260916)}" --body-file "${PR_BODY_FILE:-$ROOT/pr-body.md}" >"$ROOT/logs/pr-create.log" 2>&1
   echo "RC pr_create=$?"
   tail -n 3 "$ROOT/logs/pr-create.log"
-  PR_NUM=$(gh pr list --base main --head integration/mc-20260916 --state all --json number -q '.[0].number' 2>/dev/null)
+  PR_NUM=$(gh pr list --base main --head integration/mc-20260916 --state open --json number -q '.[0].number' 2>/dev/null)
 fi
 echo "PR_NUM=$PR_NUM"
 gh pr view "$PR_NUM" --json url -q .url

@@ -26,4 +26,5 @@ else
 fi
 
 pnpm install --no-frozen-lockfile
+if [ -d tests/e2e ]; then pnpm exec playwright install chromium || echo PLAYWRIGHT_INSTALL_FAILED; fi
 echo "BOOTSTRAP_OK repo=$PWD branch=$(git rev-parse --abbrev-ref HEAD) head=$(git rev-parse --short HEAD)"
