@@ -34,7 +34,7 @@ describe('v2 block appearances', () => {
 		expect(TEXTURE_NAMES[0]).toBe('missing')
 		expect(textureLayer('stone')).toBe(1)
 		expect(textureLayer('ladder')).toBe(72)
-		for (const name of ['netherrack', 'fence_gate', 'wheat_stage_0', 'hay_top']) {
+		for (const name of ['netherrack', 'fence_gate', 'wheat_stage_0', 'hay_block_top']) {
 			expect(textureLayer(name), name).toBeGreaterThan(72)
 		}
 	})
@@ -89,22 +89,26 @@ describe('v2 block appearances', () => {
 		}
 	})
 
-	it('gives farmland a wet and a dry top over dirt sides', () => {
-		const dirt = textureLayer('dirt')
+	it('gives farmland a wet and a dry top over shared side tiles', () => {
+		const side = textureLayer('farmland_side')
+		const bottom = textureLayer('farmland_bottom')
 		const dry = appearanceOf(BLOCK_V2.FARMLAND)
 		const wet = appearanceOf(BLOCK_V2.FARMLAND_WET)
-		expect(dry?.faces[FACE_POS_Y]).toBe(textureLayer('farmland_dry'))
-		expect(wet?.faces[FACE_POS_Y]).toBe(textureLayer('farmland_wet'))
+		expect(dry?.faces[FACE_POS_Y]).toBe(textureLayer('farmland_dry_top'))
+		expect(wet?.faces[FACE_POS_Y]).toBe(textureLayer('farmland_wet_top'))
 		expect(dry?.faces[FACE_POS_Y]).not.toBe(wet?.faces[FACE_POS_Y])
-		expect(dry?.faces[FACE_NEG_X]).toBe(dirt)
-		expect(wet?.faces[FACE_NEG_Y]).toBe(dirt)
+		expect(dry?.faces[FACE_NEG_X]).toBe(side)
+		expect(wet?.faces[FACE_NEG_X]).toBe(side)
+		expect(dry?.faces[FACE_NEG_Y]).toBe(bottom)
+		expect(wet?.faces[FACE_NEG_Y]).toBe(bottom)
 		expect(isOpaqueId(BLOCK_V2.FARMLAND)).toBe(true)
 	})
 
 	it('gives multi-face v2 blocks different top and side tiles', () => {
 		const hay = appearanceOf(BLOCK_V2.HAY_BLOCK)
-		expect(hay?.faces[FACE_POS_Y]).toBe(textureLayer('hay_top'))
-		expect(hay?.faces[FACE_NEG_X]).toBe(textureLayer('hay_side'))
+		expect(hay?.faces[FACE_POS_Y]).toBe(textureLayer('hay_block_top'))
+		expect(hay?.faces[FACE_NEG_X]).toBe(textureLayer('hay_block_side'))
+		expect(hay?.faces[FACE_NEG_Y]).toBe(textureLayer('hay_block_bottom'))
 		expect(hay?.faces[FACE_POS_Y]).not.toBe(hay?.faces[FACE_NEG_X])
 		const table = appearanceOf(BLOCK_V2.ENCHANTING_TABLE)
 		expect(table?.faces[FACE_POS_Y]).toBe(textureLayer('enchanting_table_top'))

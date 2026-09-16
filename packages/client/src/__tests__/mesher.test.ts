@@ -1,4 +1,10 @@
-import { BLOCK, RENDER_LAYER, VERTEX_STRIDE_U16, paddedIndex, sectionKey } from '@voxelcraft/core-types'
+import {
+	BLOCK,
+	RENDER_LAYER,
+	VERTEX_STRIDE_U16,
+	paddedIndex,
+	sectionKey,
+} from '@voxelcraft/core-types'
 import { describe, expect, it } from 'vitest'
 import { appearanceOf } from '../mesher/appearance'
 import { meshSection, meshSectionWithDebug } from '../mesher/greedy'

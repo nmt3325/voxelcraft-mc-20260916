@@ -280,7 +280,7 @@ const V2_SIMPLE_CUBES: ReadonlyArray<readonly [number, string]> = [
 ]
 for (const [id, texture] of V2_SIMPLE_CUBES) defineCube(id, texture, { all: texture })
 
-defineCube(BLOCK_V2.MAGMA_BLOCK, 'magma_block', { all: 'magma', emission: 3 })
+defineCube(BLOCK_V2.MAGMA_BLOCK, 'magma_block', { all: 'magma_block', emission: 3 })
 // Emission matches the portal light level frozen in the v2 contract.
 defineCube(BLOCK_V2.NETHER_PORTAL, 'nether_portal', {
 	all: 'nether_portal',
@@ -290,18 +290,26 @@ defineCube(BLOCK_V2.NETHER_PORTAL, 'nether_portal', {
 	cullGroup: GROUP_PORTAL,
 	emission: 11,
 })
-defineCube(BLOCK_V2.FARMLAND, 'farmland', { top: 'farmland_dry', side: 'dirt', bottom: 'dirt' })
+defineCube(BLOCK_V2.FARMLAND, 'farmland', {
+	top: 'farmland_dry_top',
+	side: 'farmland_side',
+	bottom: 'farmland_bottom',
+})
 defineCube(BLOCK_V2.FARMLAND_WET, 'farmland_wet', {
-	top: 'farmland_wet',
-	side: 'dirt',
-	bottom: 'dirt',
+	top: 'farmland_wet_top',
+	side: 'farmland_side',
+	bottom: 'farmland_bottom',
 })
 defineCube(BLOCK_V2.GRAVEL_PATH, 'gravel_path', {
-	top: 'gravel_path_top',
-	side: 'gravel_path_side',
+	top: 'gravel_path',
+	side: 'gravel_path',
 	bottom: 'dirt',
 })
-defineCube(BLOCK_V2.HAY_BLOCK, 'hay_block', { top: 'hay_top', bottom: 'hay_top', side: 'hay_side' })
+defineCube(BLOCK_V2.HAY_BLOCK, 'hay_block', {
+	top: 'hay_block_top',
+	side: 'hay_block_side',
+	bottom: 'hay_block_bottom',
+})
 defineCube(BLOCK_V2.ENCHANTING_TABLE, 'enchanting_table', {
 	top: 'enchanting_table_top',
 	side: 'enchanting_table_side',

@@ -1,4 +1,10 @@
-import { PADDED, PADDED_VOLUME, paddedIndex, type MeshFlags, type MeshRequest } from '@voxelcraft/core-types'
+import {
+	PADDED,
+	PADDED_VOLUME,
+	paddedIndex,
+	type MeshFlags,
+	type MeshRequest,
+} from '@voxelcraft/core-types'
 import { appearanceOf, occludedBy } from './appearance'
 
 /**
@@ -38,7 +44,13 @@ export function createEmptyPadded(): PaddedSection {
 	}
 }
 
-export function setPaddedBlock(blocks: Uint16Array, x: number, y: number, z: number, id: number): void {
+export function setPaddedBlock(
+	blocks: Uint16Array,
+	x: number,
+	y: number,
+	z: number,
+	id: number,
+): void {
 	blocks[paddedIndex(x, y, z)] = id
 }
 
