@@ -511,11 +511,15 @@ async function boot(assets: GameAssets): Promise<void> {
 		const previous = world.blockAt(bx, by, bz)
 		if (previous === BLOCK.AIR) return false
 		const definition = BLOCKS_V2.tryById(previous)
-		// A negative hardness is the contract's "unbreakable", such as bedrock.
+		// A negative hardness is the contract's "unbreakable": bedrock, and the
+		// Nether portal, which the shipped registry defines with hardness -1.
 		if (definition === undefined || definition.hardness < 0) return false
 		if (!world.setBlock(bx, by, bz, BLOCK.AIR)) return false
 		if (!isCreative(gameMode)) {
-			const itemId = definition.itemId ?? null
+			// `itemId: 0` is the contract's "no item form": the Nether portal and the
+			// three crops. Pocketing 0 would insert an item no registry resolves, and
+			// a crop's yield comes from the harvest path below, not from the block.
+			const itemId = definition.itemId > 0 ? definition.itemId : null
 			if (itemId !== null) addStack(player.inventory, makeStack(itemId, 1), V2_INVENTORY)
 		}
 		needsSectionSync = true
