@@ -1,8 +1,10 @@
 import { createTouchOverlay } from '../input/overlay'
 import { createDebugOverlay } from './debug'
 import { el } from './dom'
+import { createEnchantingScreen } from './enchanting'
 import { createHud } from './hud'
 import { createInventoryScreen } from './inventory'
+import { createMultiplayerPanel } from './multiplayer'
 import { createPauseScreen } from './pause'
 import { createSettingsScreen } from './settings'
 import { createMessageScreen, createTitleScreen } from './simple'
@@ -13,14 +15,21 @@ import { createWorldCreateScreen, createWorldSelectScreen } from './worlds'
 
 export type {
 	UiDebugInfo,
+	UiEnchantOffer,
+	UiEnchantState,
+	UiFarmInfo,
 	UiHandle,
+	UiHerdInfo,
 	UiHost,
+	UiNetInfo,
+	UiNetState,
 	UiPanel,
 	UiScreen,
 	UiSettings,
 	UiSlot,
 	UiSnapshot,
 	UiWorldEntry,
+	UiXpInfo,
 } from './types'
 export { createDefaultUiSnapshot, EMPTY_SLOT, filledSlot, seedFromText } from './snapshot'
 export { UI_CSS, UI_STYLE_ID } from './styles'
@@ -74,6 +83,7 @@ export function createUi(root: HTMLElement, host: UiHost): UiHandle {
 	add(createInventoryScreen(doc, host))
 	add(createPauseScreen(doc, host))
 	add(createSettingsScreen(doc, host))
+	add(createEnchantingScreen(doc, host))
 	add(
 		createWorldSelectScreen(doc, {
 			onSelectWorld: (worldId) => host.onSelectWorld?.(worldId),
@@ -93,6 +103,7 @@ export function createUi(root: HTMLElement, host: UiHost): UiHandle {
 			onRequestSelectScreen: () => requestScreen(null),
 		}),
 	)
+	add(createMultiplayerPanel(doc, host))
 
 	const onKeyDown = (event: KeyboardEvent): void => {
 		if (event.defaultPrevented || isTextEntry(event.target)) return

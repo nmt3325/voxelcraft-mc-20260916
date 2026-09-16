@@ -52,6 +52,12 @@ export function createDefaultUiSnapshot(): UiSnapshot {
 			showDebug: false,
 		},
 		worlds: [],
+		xp: { level: 0, progress: 0, total: 0, orbs: 0 },
+		dimension: 'Overworld',
+		farm: { crops: 0, mature: 0 },
+		herd: { animals: 0, babies: 0, inLove: 0 },
+		multiplayer: { enabled: false, state: 'off', players: 0, address: '' },
+		enchanting: null,
 	}
 }
 
