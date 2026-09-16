@@ -18,4 +18,8 @@
 export const PACKAGE_NAME = '@voxelcraft/net'
 
 export * from './bytes'
+export * from './connection'
 export * from './frame'
+export * from './heartbeat'
+export * from './protocol'
+export * from './sessions'
