@@ -255,3 +255,74 @@ Breeding needs mob entities ticked inside `packages/sim` and `apps/server`, whic
 was outside the owner set of this round. The breeding rules are covered by the
 gameplay integration test; the in-app wiring is carried over to the next release
 instead of being half-wired into the frame loop.
+
+## D-065 Review round 3 adjudication
+
+`rev5` and `rev6` independently reviewed
+`40e1a3f5c6d35ad364af6e49a296a64756921850`, both returned `request changes`, and
+both reproduced their findings with their own drivers on the runner. Every
+blocker below is assigned to exactly one owning branch; nothing is closed on the
+strength of a report alone.
+
+## D-066 rev5 B-02: apps/game must not keep its own v2 tables
+
+`apps/game/src/registries.ts` declared a second copy of the v2 block and item
+data and 14 of 18 ids disagreed with the gameplay registries. The
+player-visible effects were a breakable Nether portal (hardness 0 against the
+contract value -1) that inserted the undefined item id 65, and crops carrying an
+`itemId` that let a mature plant be pocketed and replanted. Branch
+`feat/mc-20260916/fix-e` removes the duplication so the gameplay and core-types
+registries are the single source of truth.
+
+## D-067 rev5 M-02: the app registry needs tests with power
+
+No test imported `apps/game/src/registries.ts`, so deleting an entry left every
+gate green. `fix-e` adds parity tests across all 36 v2 ids and must show them
+failing on a deliberately deleted entry before restoring it.
+
+## D-068 rev6 B-1: an accepted edit must be durable or fail loudly
+
+`worldStore` inserted a new column and ran eviction before the write pinned its
+key, so the new column was the only unpinned victim: 400 edits in 400 distinct
+columns produced 62 unreadable blocks, first loss at index 338, while the server
+still returned success and broadcast `BlockChange`. Branch
+`feat/mc-20260916/fix-f` fixes the ordering and accounting, keeps the resident
+set inside its cap, and adds regression tests that fail on the old ordering.
+
+## D-069 rev6: CI installs frozen and runs the perf harness
+
+Both CI jobs installed with `--no-frozen-lockfile`, so a stale lockfile could
+never fail the build, and `pnpm bench` never ran in CI at all. CI now installs
+with `--frozen-lockfile` in every job and gains a `bench` job that runs the
+harness and uploads its results.
+
+## D-070 rev6: bench baselines must describe their own run
+
+The committed baseline hard-coded `task: 'fix-c'`, gated light seeding against
+the chunk-generation budget, and printed a section-mesh budget that nothing
+compared. `fix-f` owns `tests/bench` this round and makes the recorded task, the
+gated budgets and the printed budgets all correspond to real measurements.
+
+## D-071 rev5 M-01: breeding stays deferred and is documented as such
+
+Breeding is still unreachable from the running game, which is the deliberate
+outcome of D-064. It stays deferred, and the README states it as a known
+limitation instead of implying the feature is playable.
+
+## D-072 README is rebuilt from measured values at the release sha
+
+`README.md` misstated the bundle size, the e2e spec count, all four bench
+numbers and `CONTRACT_VERSION`, never mentioned `apps/server` or
+`@voxelcraft/net`, and never mentioned the Nether. L0 rewrites those sections
+from the numbers printed by the final gate run on the promoted sha, including the
+Nether persistence limitation from D-063.
+
+## D-073 Deferred minors from review round 3
+
+Carried forward with no code change this round: the audio gate never asserts
+`assetsReady`; `portalCue` is recomputed every frame; `ParticlePool` scans all
+live particles; the `drawCalls` assertion is tautological; `droppedQuads` is
+hard-coded to 0; `@voxelcraft/assets-gen` is still listed as a dependency that is
+no longer needed; `blockPropsV2.test.ts` has one guard that only checks its own
+fixture; and reviewers necessarily see a slightly older sha than the tip when L0
+keeps merging during a review.
