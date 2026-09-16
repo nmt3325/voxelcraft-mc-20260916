@@ -1,0 +1,41 @@
+{
+	"worldGenVersion": 1,
+	"generator": "createWorldGenerator",
+	"entries": [
+		{
+			"seed": 1337,
+			"cx": 0,
+			"cz": 0,
+			"blocks": 2763474780,
+			"fluids": 1582341573
+		},
+		{
+			"seed": 1337,
+			"cx": 5,
+			"cz": -3,
+			"blocks": 1508117521,
+			"fluids": 1582341573
+		},
+		{
+			"seed": 1337,
+			"cx": -12,
+			"cz": 7,
+			"blocks": 1825573235,
+			"fluids": 1582341573
+		},
+		{
+			"seed": 20260916,
+			"cx": 0,
+			"cz": 0,
+			"blocks": 2319082960,
+			"fluids": 1582341573
+		},
+		{
+			"seed": 20260916,
+			"cx": 31,
+			"cz": 29,
+			"blocks": 2689750948,
+			"fluids": 1582341573
+		}
+	]
+}
