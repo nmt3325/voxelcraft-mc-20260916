@@ -224,3 +224,34 @@ generation, break/place, save/load, crafting and the E2E suite are never reduced
 - bench baseline の陳腐化と `lightSeedAndStitchMs` の閾値欠落は rev3 と重複するため D-059 の M-5（fix-c）に統合した。
 - レビュー sha ドリフト（起動時 `dae16174`、実測 `9573084`）は仕様通り。レビュアは常に自分で `origin/integration/mc-20260916` を fetch して実 head を報告する。
 - レビュー成果物は `docs/reviews/rev3.md` と `docs/reviews/rev4.md` として統合ブランチにマージ済み（ゲート job `6d65cba9cb6c4726` と `d0dee49ed71b429f`、統合 head `9aab3290`）。
+
+## D-061 Review round 2 fixes were merged one branch at a time
+
+fix-d (registries), fix-c (net hardening) and wire-b (app reachability) were
+verified against git rather than self-reports, then merged with `merge --no-ff`
+in that order, each followed by the full eight-gate check. Resulting integration
+commits: fix-d `ce558fb4`, fix-c `1a75b2cf`, wire-b `74ed23c9`. Every gate exited
+0 on all three merges.
+
+## D-062 apps/game depends on @voxelcraft/net as a real workspace package
+
+wire-b reached the net layer through a tsconfig `paths` entry plus a Vite
+`resolve.alias`, because `package.json` and `pnpm-lock.yaml` are owned by L0.
+L0 now adds `net` to the `apps/game` entry in `scripts/wire-deps.cjs`,
+regenerates the manifest, refreshes the lockfile importer, and removes both the
+tsconfig path and the Vite alias. The protocol module is a normal dependency, so
+the bundler, the type checker and `--frozen-lockfile` all agree.
+
+## D-063 Nether edits are not persisted in v1.2
+
+`SAVE_VERSION` 1 has no per-dimension chunk namespace, so blocks placed in the
+Nether are not written back to IndexedDB. Changing the save format is a
+breaking contract change, so it is deferred. Documented as a known limitation
+rather than silently shipped.
+
+## D-064 Animal breeding stays verified at the gameplay API level
+
+Breeding needs mob entities ticked inside `packages/sim` and `apps/server`, which
+was outside the owner set of this round. The breeding rules are covered by the
+gameplay integration test; the in-app wiring is carried over to the next release
+instead of being half-wired into the frame loop.

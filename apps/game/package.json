@@ -17,6 +17,7 @@
     "@voxelcraft/sim": "workspace:*",
     "@voxelcraft/gameplay": "workspace:*",
     "@voxelcraft/client": "workspace:*",
-    "@voxelcraft/assets-gen": "workspace:*"
+    "@voxelcraft/assets-gen": "workspace:*",
+    "@voxelcraft/net": "workspace:*"
   }
 }
