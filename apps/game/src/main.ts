@@ -14,9 +14,13 @@
  */
 import {
 	BLOCK,
+	BLOCK_V2,
 	CHUNK_X,
 	CHUNK_Z,
 	GAME_MODE,
+	INPUT_BIT,
+	NET,
+	PARTICLE,
 	PERF,
 	PHYSICS,
 	SECTIONS_PER_CHUNK,
@@ -26,17 +30,23 @@ import {
 	worldToChunk,
 	type BlockId,
 	type GameSettings,
+	type ParticleId,
 	type RayHit,
 	type VoxelView,
 } from '@voxelcraft/core-types'
 import {
+	ParticlePool,
+	ParticleRenderer,
+	SOUND_EVENT,
 	VoxelRenderer,
 	createAudio,
 	createMesherPool,
+	createSoundEvents,
 	createUi,
 	fallbackAtlas,
 	type AudioHandle,
 	type MesherPool,
+	type SoundEventPlayer,
 	type UiDebugInfo,
 	type UiHandle,
 	type UiHost,
@@ -111,10 +121,20 @@ interface VcMesherStats {
 	pending: number
 }
 
+/** Particle telemetry, so e2e can prove the pool and the batch are wired up. */
+interface VcParticleStats {
+	alive: number
+	visible: number
+	drawCalls: number
+	capacity: number
+	spawnBudget: number
+}
+
 interface VcTestApi {
 	ready: Promise<void>
 	state(): VcState
 	mesher(): VcMesherStats
+	particles(): VcParticleStats
 	getBlock(x: number, y: number, z: number): number
 	breakBlock(x: number, y: number, z: number): void
 	placeBlock(x: number, y: number, z: number, id: number): void
@@ -159,6 +179,23 @@ const WOOD_BLOCKS: readonly BlockId[] = [
 	BLOCK.CHEST,
 	BLOCK.LADDER,
 ]
+
+/** Breaking one of these is a harvest, so it also raises the farming cue. */
+const CROP_BLOCKS: readonly BlockId[] = [
+	BLOCK_V2.WHEAT_CROP,
+	BLOCK_V2.CARROT_CROP,
+	BLOCK_V2.POTATO_CROP,
+]
+
+/** Particles spawned per broken block and per placed block. */
+const BREAK_PARTICLES = 14
+const PLACE_PARTICLES = 6
+
+/** Repeat cadence while a touch long-press holds the attack button. */
+const TOUCH_MINE_SECONDS = 0.25
+
+/** Pitch clamp shared by mouse look and touch drag look. */
+const PITCH_LIMIT = Math.PI / 2 - 0.001
 
 async function boot(assets: GameAssets): Promise<void> {
 	const params = new URLSearchParams(window.location.search)
@@ -276,8 +313,23 @@ async function boot(assets: GameAssets): Promise<void> {
 		volume: settings.volume,
 	})
 
+	// One fixed-capacity pool, plus the single batched draw call that shows it.
+	const particles = new ParticlePool()
+	const particleBatch = new ParticleRenderer()
+	renderer.scene.add(particleBatch.object)
+	// v2 cues (portal, enchanting, harvest, pops) resolved against the manifest once.
+	const soundEvents: SoundEventPlayer = createSoundEvents({
+		audio,
+		manifest: assets.sounds,
+	})
+
 	let screen: UiScreen = 'playing'
 	let needsSectionSync = true
+	/** Latest INPUT_BIT mask from the touch overlay, merged with the keyboard. */
+	let touchBits = 0
+	/** True while a touch long-press holds the attack button down. */
+	let touchAttack = false
+	let sinceMine = 0
 
 	/** Raycast view where plants and torches are pickable but fluids are not. */
 	const targetView: VoxelView = {
@@ -291,6 +343,34 @@ async function boot(assets: GameAssets): Promise<void> {
 	const playSound = (name: string): void => {
 		audio.play(name)
 	}
+
+	// --- particles ----------------------------------------------------------
+
+	/** Burst at a block centre. The pool clamps this to its per-tick budget. */
+	const burstAt = (x: number, y: number, z: number, kind: ParticleId, count: number): void => {
+		particles.spawn({ kind, x: x + 0.5, y: y + 0.5, z: z + 0.5, count, spread: 0.12 })
+		soundEvents.play(SOUND_EVENT.ParticlePop)
+	}
+
+	const isCrop = (id: BlockId): boolean => CROP_BLOCKS.includes(id)
+
+	/** A bookshelf inside the vanilla 5x3x5 reach powers an enchanting table. */
+	const poweringTable = (x: number, y: number, z: number): boolean => {
+		for (let dy = -1; dy <= 1; dy++) {
+			for (let dz = -2; dz <= 2; dz++) {
+				for (let dx = -2; dx <= 2; dx++) {
+					if (world.blockAt(x + dx, y + dy, z + dz) === BLOCK_V2.ENCHANTING_TABLE) return true
+				}
+			}
+		}
+		return false
+	}
+
+	const nearPortal = (x: number, y: number, z: number): boolean =>
+		world.blockAt(x + 1, y, z) === BLOCK_V2.NETHER_PORTAL ||
+		world.blockAt(x - 1, y, z) === BLOCK_V2.NETHER_PORTAL ||
+		world.blockAt(x, y, z + 1) === BLOCK_V2.NETHER_PORTAL ||
+		world.blockAt(x, y, z - 1) === BLOCK_V2.NETHER_PORTAL
 
 	// --- editing ------------------------------------------------------------
 
@@ -310,6 +390,8 @@ async function boot(assets: GameAssets): Promise<void> {
 		}
 		needsSectionSync = true
 		playSound(WOOD_BLOCKS.includes(previous) ? 'dig_wood' : 'dig_stone')
+		burstAt(bx, by, bz, PARTICLE.BlockBreak, BREAK_PARTICLES)
+		if (isCrop(previous)) soundEvents.play(SOUND_EVENT.CropHarvest)
 		return true
 	}
 
@@ -332,6 +414,12 @@ async function boot(assets: GameAssets): Promise<void> {
 		}
 		needsSectionSync = true
 		playSound('place_generic')
+		burstAt(bx, by, bz, PARTICLE.Smoke, PLACE_PARTICLES)
+		if (isCrop(id)) soundEvents.play(SOUND_EVENT.CropPlant)
+		if (id === BLOCK_V2.ENCHANTING_TABLE) soundEvents.play(SOUND_EVENT.EnchantStart)
+		if (id === BLOCK_V2.BOOKSHELF && poweringTable(bx, by, bz)) {
+			soundEvents.play(SOUND_EVENT.EnchantApply)
+		}
 		return true
 	}
 
@@ -350,6 +438,35 @@ async function boot(assets: GameAssets): Promise<void> {
 		const id = heldBlockId(player.inventory)
 		if (id === null) return
 		placeAt(hit.block.x + hit.normal.x, hit.block.y + hit.normal.y, hit.block.z + hit.normal.z, id)
+	}
+
+	/** Touch attack is a hold, so the break repeats on a fixed cadence. */
+	const mineHeld = (dt: number): void => {
+		sinceMine += dt
+		if (sinceMine < TOUCH_MINE_SECONDS) return
+		sinceMine = 0
+		breakTargeted()
+	}
+
+	/** Travel cue inside a portal, ambient hum while standing next to one. */
+	const portalCue = (): void => {
+		const eye = player.eye()
+		const bx = Math.floor(eye.x)
+		const by = Math.floor(eye.y)
+		const bz = Math.floor(eye.z)
+		if (world.blockAt(bx, by, bz) === BLOCK_V2.NETHER_PORTAL) {
+			soundEvents.play(SOUND_EVENT.PortalTravel)
+			particles.spawn({
+				kind: PARTICLE.Portal,
+				x: eye.x,
+				y: eye.y,
+				z: eye.z,
+				count: 2,
+				spread: 0.25,
+			})
+			return
+		}
+		if (nearPortal(bx, by, bz)) soundEvents.play(SOUND_EVENT.PortalAmbient)
 	}
 
 	// --- section streaming --------------------------------------------------
@@ -556,6 +673,21 @@ async function boot(assets: GameAssets): Promise<void> {
 		onPlaySound(name: string): void {
 			playSound(name)
 		},
+		onTouchInput(bits: number): void {
+			touchBits = bits
+		},
+		onTouchLook(delta: { yaw: number; pitch: number }): void {
+			if (screen !== 'playing') return
+			player.yaw -= delta.yaw
+			player.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, player.pitch + delta.pitch))
+		},
+		onTouchUse(): void {
+			if (screen === 'playing') placeTargeted()
+		},
+		onTouchAttack(active: boolean): void {
+			touchAttack = active
+			sinceMine = TOUCH_MINE_SECONDS
+		},
 	}
 
 	const ui: UiHandle | null = uiRoot === null ? null : createUi(uiRoot, host)
@@ -595,19 +727,26 @@ async function boot(assets: GameAssets): Promise<void> {
 	// --- input ---------------------------------------------------------------
 
 	const pressed = new Set<string>()
-	const PITCH_LIMIT = Math.PI / 2 - 0.001
 
 	const readMove = (): void => {
 		if (screen !== 'playing') {
+			touchBits = 0
+			touchAttack = false
 			player.clearMove()
 			return
 		}
+		// Touch and keyboard are additive: either surface can drive the player.
+		const touched = (bit: number): boolean => (touchBits & bit) !== 0
 		player.setMove({
-			forward: (pressed.has('KeyW') ? 1 : 0) - (pressed.has('KeyS') ? 1 : 0),
-			strafe: (pressed.has('KeyD') ? 1 : 0) - (pressed.has('KeyA') ? 1 : 0),
-			jump: pressed.has('Space'),
-			sprint: pressed.has('ShiftLeft') || pressed.has('ShiftRight'),
-			sneak: pressed.has('ControlLeft') || pressed.has('ControlRight'),
+			forward:
+				(pressed.has('KeyW') || touched(INPUT_BIT.Forward) ? 1 : 0) -
+				(pressed.has('KeyS') || touched(INPUT_BIT.Back) ? 1 : 0),
+			strafe:
+				(pressed.has('KeyD') || touched(INPUT_BIT.Right) ? 1 : 0) -
+				(pressed.has('KeyA') || touched(INPUT_BIT.Left) ? 1 : 0),
+			jump: pressed.has('Space') || touched(INPUT_BIT.Jump),
+			sprint: pressed.has('ShiftLeft') || pressed.has('ShiftRight') || touched(INPUT_BIT.Sprint),
+			sneak: pressed.has('ControlLeft') || pressed.has('ControlRight') || touched(INPUT_BIT.Sneak),
 		})
 	}
 
@@ -675,6 +814,7 @@ async function boot(assets: GameAssets): Promise<void> {
 		sinceSync += dt
 
 		readMove()
+		if (touchAttack && screen === 'playing') mineHeld(dt)
 		player.advance(dt * 1000)
 
 		if (
@@ -703,6 +843,12 @@ async function boot(assets: GameAssets): Promise<void> {
 		// Test mode freezes the sun at noon so screenshots are comparable.
 		renderer.setTimeOfDay(testMode ? 0.5 : (elapsed % DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS)
 		renderer.setUnderwater(player.inWater)
+
+		// Particles advance on the sim clock (20 Hz), not on wall-clock frame time.
+		particles.update(dt * NET.tickHz)
+		particleBatch.sync(particles)
+		portalCue()
+
 		renderer.flushUploads(PERF.uploadsPerFrame)
 		renderer.render(dt)
 
@@ -755,6 +901,15 @@ async function boot(assets: GameAssets): Promise<void> {
 				errors: mesh.errors,
 				requested: mesh.requested,
 				pending: mesh.pending,
+			}
+		},
+		particles(): VcParticleStats {
+			return {
+				alive: particles.aliveCount,
+				visible: particleBatch.visibleCount,
+				drawCalls: particleBatch.drawCalls,
+				capacity: particles.capacity,
+				spawnBudget: particles.spawnBudgetRemaining,
 			}
 		},
 		getBlock(x: number, y: number, z: number): number {
