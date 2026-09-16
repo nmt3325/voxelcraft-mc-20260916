@@ -185,3 +185,7 @@ Every merge into `integration/mc-20260916` re-runs the full gate: `pnpm -r exec 
 `scripts/report-size.sh`. If the schedule runs short, v2 items are dropped in this order:
 particle expansion, village generation, breeding, enchanting, the Nether, multiplayer. World
 generation, break/place, save/load, crafting and the E2E suite are never reduced.
+
+- D-051 (2026-09-16 12:05 JST): Fresh gha mcp runners ship without Playwright browsers, so the e2e gate fails with a missing chrome-headless-shell executable. scripts/bootstrap-env.sh now runs `pnpm exec playwright install chromium` whenever tests/e2e exists, and every child prompt repeats the step. Commit fea12602.
+- D-052 (2026-09-16 12:05 JST): scripts/l0/main-merge.sh looked up pull requests with `--state all`, so it reused the already merged PR #6 for the same base/head pair, reported success and left `main` untouched. The lookup now uses `--state open` only, so every promotion either reuses a genuinely open PR or opens a new one. Commit fea12602.
+- D-053 (2026-09-16 12:05 JST): External upload mirrors remain unavailable. Catbox answers HTTP 412 `Invalid uploader` and Litterbox answers HTTP 500 for the same archive, from a fresh runner and a fresh IP. GitHub Releases stay the canonical distribution surface for this run; the mirror is optional and will be retried once more before the final report.
