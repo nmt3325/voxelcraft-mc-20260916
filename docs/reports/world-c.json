@@ -1,0 +1,95 @@
+{
+	"task": "world-c",
+	"branch": "feat/mc-20260916/world-c",
+	"status": "done",
+	"base_sha": "b4d410e",
+	"head_sha": "fb5d3867a59e45e406e1a347a8fa36980dc49135",
+	"commits": [
+		{
+			"sha": "b28f50b36d06f8514ec69edd10367a2421810fd8",
+			"message": "world-c: harden cave/ore/vegetation determinism and add feature tests"
+		},
+		{
+			"sha": "fb5d3867a59e45e406e1a347a8fa36980dc49135",
+			"message": "world-c: exact lazy-field and vein reach pruning, regenerate golden"
+		}
+	],
+	"files_changed": [
+		"packages/world/src/features/caves.ts",
+		"packages/world/src/features/ores.ts",
+		"packages/world/src/features/vegetation.ts",
+		"packages/world/src/__tests__/world-c.features.test.ts",
+		"packages/world/src/__tests__/golden.json",
+		"docs/reports/world-c.json"
+	],
+	"checks": [
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "45c128e9c89149a0",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "no diagnostics on any workspace project"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm -r lint",
+			"job_id": "ef10229b3f174c7e",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "eslint clean on 9 of 10 workspace projects"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "0937d499fe97487e",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "packages/world: Test Files 3 passed (3), Tests 38 passed (38); world-c chunkGen avg 4.880 ms, decorate avg 0.223 ms"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "213af0fde2f94b32",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "assets-gen manifest written, vite build ok in 47ms"
+		},
+		{
+			"name": "output-equality-after-optimisation",
+			"command": "tsx /tmp/world-c-hash.ts on fb5d386 working tree vs b28f50b features",
+			"job_id": "1837c72d0520403f",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "HASHES_IDENTICAL over 66 chunk hashes (30 generateChunk + 36 decorated, seeds 1337 and 20260916)"
+		},
+		{
+			"name": "stage-profile",
+			"command": "tsx /tmp/world-c-bench.ts (64 chunks, 16 warmup)",
+			"job_id": "63c3d097e7d94289",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "terrain sampling 0.861 ms, column fill 0.895 ms, caves 1.933 ms (halo 0.257 ms), ores 0.727 ms, generateChunk total 4.733 ms"
+		}
+	],
+	"contract_changes_needed": [],
+	"notes": [
+		"Scope: improved and extended the existing L1-A v1 implementation in packages/world/src/features/**; exported names and argument order of createCaveCarver / createOrePlacer / createVegetation / createFeatureSet are unchanged and still match src/internal.ts. No file outside my owned paths was edited, and no constant in src/internal.ts was touched.",
+		"Caves: carving now starts at max(BEDROCK_LAYERS, CAVES.minY + 1) so the bedrock shell is never cut (v1 started at y=3, inside bedrock). Crust protection is a pure function of a world column: CAVES.surfaceMargin, plus SUBMERGED_SEAL=6 extra blocks under water so no cave can drain the ocean, a SHORE_CEILING=SEA_LEVEL-2 cap within SHORE_BAND=6 of sea level, and erosion to the lowest of the four neighbouring columns, sampled through an 18x18 halo so both sides of a chunk border agree. Both thresholds fade out over FADE_BLOCKS=6 near the crust and near bedrock.",
+		"Caves keep the coarse lattice plus trilinear interpolation; no per-voxel full-resolution 3D noise. Three exact prunings: fill only the lattice levels the chunk can reach, skip a whole lattice cell whose eight corners stay under both thresholds (sound because trilinear interpolation is a convex combination of the corners), and evaluate the second ridged tunnel field only where 1 - |a| still allows a tunnel, which also removes the per-voxel tunnel interpolation in those cells.",
+		"Ores: writes are clamped into the OreDef band [minY, maxY] and never touch bedrock, non-STONE blocks, fluids, the surface or already carved cave air (v1 only clamped to y in [1, 254]). The 3x3 neighbourhood is replayed and clipped, and a vein that cannot reach the chunk is skipped by Manhattan reach while still consuming the same random draws, so pruning is exactly output preserving. The walk no longer steps straight back, so veins extend instead of oscillating.",
+		"Deliberate deviation to review: decorate now clips every write to the chunk being decorated, so it no longer reaches into neighbours the way the v1 comment described. Cross-border trees are still reproduced because every neighbouring cell that can reach the chunk is replayed from its own seed, and clipping is what makes decoration order invariant; v1's first-writer-wins setIfAir across borders was order dependent. v1 also never consulted view.isLoaded.",
+		"Vegetation runs in two passes, all trunks and then all canopies, so an earlier tree's canopy can no longer occupy a later tree's trunk voxel. Species follow the biome (Desert cactus, Snowy and Mountains conifer, otherwise oak or birch), leaves always outnumber logs, nothing overwrites an existing solid voxel, and writes to unloaded chunks are dropped through isLoaded.",
+		"Randomness comes only from core-types hashU32 / hash01 / makeRng. No Math.random, Date.now, Math.sin, Math.cos or performance.now in world generation source, so the world-a source scan stays green.",
+		"golden.json was regenerated with pnpm --filter @voxelcraft/world run golden:update after the generation output was final, and was never hand-edited. All five block hashes changed because of the bedrock, crust, ore band and determinism fixes; the fluid hash stayed 1582341573 on all five entries, which confirms no fluid regression. The later perf work changed nothing: 66 chunk hashes are identical before and after it.",
+		"Performance is honest and above budget. generateChunk averages 4.73 ms in the isolated profiler and 4.88 to 5.07 ms under vitest on this GitHub Actions runner, against PERF.chunkGenBudgetMs = 4 ms; decorate averages 0.16 to 0.23 ms. The L1-A v1 baseline measured 5.85 ms on the same runner, so this is about 19 percent faster with all the invariants added. Of the 4.73 ms, 1.76 ms is terrain sampling plus column fill, which are L1-A owned, and my two passes are 2.66 ms (caves 1.93 including a 0.26 ms halo, ores 0.73). Closing the last 0.7 ms needs either a coarser cave lattice, which costs cave shape quality, or caching on the terrain side, which is outside my paths. The perf test asserts against BENCH.chunkGenAvgMsMax * BENCH.failFactor to stay stable on noisy runners rather than pinning the raw budget.",
+		"Tests: packages/world/src/__tests__/world-c.features.test.ts adds 17 tests in four groups. Cave carving covers surface crust preservation, the bedrock shell, the deep air ratio (measured 7.64 percent), the presence of both chambers and tunnels, and the sea floor seal. Ore veins cover depth bands with full type coverage and mean-depth ordering, never replacing a surface block, and cross-border reproducibility against a standalone chunk and a reversed region. Decoration covers order invariance across forward, reverse and quadrant orders, decorating twice, a lone chunk, unloaded neighbours, trunk and canopy structure, plants rooted on solid ground, and species per biome. The last group measures generation and decoration cost.",
+		"The report commit sits on top of head_sha fb5d386; it only adds this file."
+	]
+}

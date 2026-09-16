@@ -1,0 +1,80 @@
+{
+	"task": "gameplay-c",
+	"branch": "feat/mc-20260916/gameplay-c",
+	"status": "done",
+	"base_sha": "ef516763f434750cb8519a7af2a991e4761f1697",
+	"contract_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+	"head_sha": "2058cec5b41b15d5b085658031d1196ab78a18f1",
+	"commits": [
+		"e4dfee6c72ec8fd1092563aa5e98cb1574bfb597 feat(gameplay): chunk codec, world stores and redstone engine",
+		"2058cec5b41b15d5b085658031d1196ab78a18f1 test(gameplay): chunk codec, world store, write queue and redstone coverage"
+	],
+	"files_changed": [
+		"packages/gameplay/src/persistence/bytes.ts",
+		"packages/gameplay/src/persistence/chunkCodec.test.ts",
+		"packages/gameplay/src/persistence/chunkCodec.ts",
+		"packages/gameplay/src/persistence/compression.ts",
+		"packages/gameplay/src/persistence/fsStore.ts",
+		"packages/gameplay/src/persistence/index.ts",
+		"packages/gameplay/src/persistence/indexedDbStore.test.ts",
+		"packages/gameplay/src/persistence/indexedDbStore.ts",
+		"packages/gameplay/src/persistence/memoryStore.ts",
+		"packages/gameplay/src/persistence/support.ts",
+		"packages/gameplay/src/persistence/worldStore.test.ts",
+		"packages/gameplay/src/persistence/writeQueue.ts",
+		"packages/gameplay/src/redstone/engine.ts",
+		"packages/gameplay/src/redstone/index.ts",
+		"packages/gameplay/src/redstone/redstone.test.ts",
+		"packages/gameplay/src/redstone/roles.ts",
+		"docs/reports/gameplay-c.json"
+	],
+	"checks": [
+		{
+			"name": "tsc",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "a7a81045ba5d43e7",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "FINAL_TSC_EXIT=0 / no diagnostics (tsc printed nothing for all 9 workspace projects)"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm -r lint",
+			"job_id": "3ddb483ff58944e8",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "FINAL_LINT_EXIT=0 / Scope: 9 of 10 workspace projects ... packages/gameplay lint: Done ... apps/game lint: Done (no eslint errors)"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "baade2beb9684957",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "FINAL_TEST_EXIT=0 / packages/gameplay test: Test Files 7 passed (7), Tests 93 passed (93); other packages: no test files, exiting with code 0"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "1c102f7f220c4af0",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "FINAL_BUILD_EXIT=0 / assets-gen scaffold manifest written; vite build: 5 modules transformed, built in 72ms"
+		},
+		{
+			"name": "gameplay-scoped (typecheck+test+lint)",
+			"command": "pnpm --filter @voxelcraft/gameplay typecheck && test && lint",
+			"job_id": "622b5ea054014b52",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "TYPECHECK_EXIT=0 / TEST_EXIT=0 (7 files, 93 tests passed) / LINT_EXIT=0"
+		}
+	],
+	"contract_changes_needed": [],
+	"notes": "ChunkCodec: 12-byte header (magic 56 58 43 01 | version u16 | flags u16 | sectionMask u16 | reserved u16). Each present section: paletteLen u16 | palette u16*len | bits u8 | pad u8 | data u32*n | fluid RLE (value u8, runLength u16) covering the section's 4096 voxels. bits is 0 when paletteLen===1, otherwise the smallest of {1,2,4,8,16} with 2^bits >= paletteLen; entriesPerWord = 32/bits so no entry straddles a word. Light is never stored. Block entities: count u16 then (index u16 | jsonLen u16 | utf8 json) using the parent's serializeBlockEntities / blockEntityToJson, always index-ascending. An all-air chunk encodes to 14 bytes (header + empty block entity table). ChunkCodec {version, encode, decode, canDecode} is exported as CHUNK_CODEC; decodeChunkAt(bytes, cx, cz) takes the coordinates from the storage key. blockIndex/worldToChunk/worldToLocal come from core-types and are respected by chunkLocalIndex.\n\nWorldStore: three adapters share one payload codec and key helper set. createIndexedDbWorldStore uses compound array keys [worldId, cx, cz] (never template strings) and writes every putChunks entry in a single transaction; createMemoryWorldStore (with rawChunk/compressed for tests) and createFsWorldStore (one directory per world, chunk.<cx>.<cz>.bin, tmp+rename staging) cover Node. Compression prefers CompressionStream('deflate-raw') and falls back to node:zlib deflateRawSync/inflateRawSync for Node before 21.2; compress:false keeps payloads raw. createChunkWriteQueue batches at PERSIST.writeBatchChunks=32 or PERSIST.writeIntervalMs=1500ms, collapses repeated writes to the same chunk (latest wins), copies caller buffers, serializes flushes and flushes on close(); tests inject a manual WriteTimer so the 32-chunk and 1.5s thresholds are verified deterministically. listWorlds sorts by worldId, listChunkKeys sorts by cx then cz so negative coordinates keep their order. PlayerSave.respawn round-trips as Vec3i and as null.\n\nRedstoneEngine: {onBlockChanged, setSourcePower, powerAt, tick(now, budget)} plus setPistonFacing/isPowered/pendingCount. Each dirty tick recomputes the whole field with a deterministic 15-down-to-1 bucket sweep (cells ordered by y,z,x), capped at min(budget, REDSTONE.maxUpdatesPerTick) and resumed on the next tick, so cyclic wire loops converge instead of oscillating. Wire loses 1 power per block from a max of 15; levers and pressure plates hold until released; buttons auto-release after REDSTONE.buttonTicks=20; doors are driven only through the parent's setDoorPowered; lamps swap REDSTONE_LAMP/REDSTONE_LAMP_LIT; pistons extend/retract REDSTONE.pistonMoveTicks=2 after the edge and push up to 12 blocks, refusing immovable blocks (piston/head, hardness<0, block entities). Stale sources whose block was mined are pruned.\n\nScope: packages/gameplay/src/index.ts was intentionally left untouched - persistence/index.ts and redstone/index.ts are ready for the parent to re-export at merge time. No dependency, core-types, CI, or docs/orchestration changes; fake-indexeddb ^6.2.5 was already a root devDependency and is used only by indexedDbStore.test.ts. head_sha is the commit the four final checks ran against; this report commit sits directly on top of it. Tabs, single quotes, no semicolons, import type for type-only imports throughout."
+}

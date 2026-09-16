@@ -1,7 +1,7 @@
 node_modules
 dist
-coverage
-playwright-report
-test-results
-generated
 pnpm-lock.yaml
+tests/bench/results
+tests/e2e/artifacts
+packages/assets-gen/out
+packages/client/src/generated

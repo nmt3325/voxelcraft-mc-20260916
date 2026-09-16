@@ -1,0 +1,77 @@
+{
+	"task": "gameplay-b",
+	"branch": "feat/mc-20260916/gameplay-b",
+	"status": "done",
+	"base_sha": "ef516763f434750cb8519a7af2a991e4761f1697",
+	"head_sha": "9da208b9bedc772829d711283cff29374392f759",
+	"commits": [
+		{
+			"sha": "9da208b9bedc772829d711283cff29374392f759",
+			"message": "feat(gameplay): add inventory, crafting and furnace smelting"
+		}
+	],
+	"files_changed": [
+		"packages/gameplay/src/inventory/stacks.ts",
+		"packages/gameplay/src/inventory/tools.ts",
+		"packages/gameplay/src/inventory/inventory.ts",
+		"packages/gameplay/src/inventory/index.ts",
+		"packages/gameplay/src/inventory/inventory.test.ts",
+		"packages/gameplay/src/crafting/recipes.ts",
+		"packages/gameplay/src/crafting/registry.ts",
+		"packages/gameplay/src/crafting/craft.ts",
+		"packages/gameplay/src/crafting/furnace.ts",
+		"packages/gameplay/src/crafting/index.ts",
+		"packages/gameplay/src/crafting/crafting.test.ts",
+		"packages/gameplay/src/crafting/furnace.test.ts",
+		"docs/reports/gameplay-b.json"
+	],
+	"checks": [
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "ee691beb21b444f6",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "no diagnostics; tsc --noEmit clean for every workspace project"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm -r lint",
+			"job_id": "11ec90e1524c41c5",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "Scope: 9 of 10 workspace projects / packages/gameplay lint: Done / apps/game lint: Done"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "7034fc346a874fc0",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "packages/core-types: Tests 29 passed (29); packages/gameplay: Test Files 6 passed (6), Tests 80 passed (80) including inventory.test.ts (16), crafting.test.ts (13), furnace.test.ts (9)"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "a0b342ed18394e66",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "[assets-gen] scaffold manifest written; vite build: 5 modules transformed, built in 49ms"
+		}
+	],
+	"contract_changes_needed": [],
+	"notes": [
+		"packages/gameplay/src/index.ts is parent-owned, so the new modules are not re-exported from the package root yet. At merge add: export * from './inventory' and export * from './crafting'.",
+		"Export names were picked to avoid collisions with the existing blockEntities barrel: StackLimitResolver (vs MaxStackResolver) and cloneItemStack (vs cloneStack).",
+		"Inventory: 36 slots (9 hotbar + 27 main) from INVENTORY, stack limits from ITEMS.maxStackOf (tools 1), stacks merge only when item id and damage match, tool damage destroys the stack once durability is exceeded, and GAME_MODE.Creative consumes neither items nor durability.",
+		"Crafting: RecipeRegistry implementation over 53 recipes (37 shaped, 4 shapeless, 12 smelting), covering planks, stick, crafting table, furnace, chest, all 16 tool tier/class combinations, torch, door, bed and the redstone family (lamp, lever, button, pressure plate, piston). Shaped matching is translation invariant via bounding-box normalization, shapeless matching is order independent and multiset exact, and matchCrafting handles both 2x2 and 3x3 grids.",
+		"Furnace: tickFurnace is a pure function over FurnaceData. Cook progress is frozen (never decayed) while fuel is exhausted or the output slot is blocked, so interrupt plus resume equals one long tick; removing the input resets progress. Fuel is only lit when a smeltable input is present and the output can accept the result, and output stacks accumulate up to the registry stack limit.",
+		"canHarvestWith / breakTimeWith wrap the contract canHarvest / breakTimeSeconds helpers, so no contract change was needed.",
+		"pnpm build regenerates packages/assets-gen/generated and dist/, which are ignored; git status is clean at head_sha.",
+		"This report file is added by a follow-up commit on top of head_sha and contains no source changes."
+	]
+}

@@ -1,0 +1,112 @@
+{
+  "task": "world-a",
+  "branch": "feat/mc-20260916/world-a",
+  "status": "done",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "bd69cc0fb5d9331f49ed7e83e06805390bbbe2dc",
+  "commits": [
+    "bd69cc0fb5d9331f49ed7e83e06805390bbbe2dc merge: L2 world-c cave/ore/vegetation correctness and report",
+    "2e3c72453476181b8b3b321cf9cac19934bad9b6 merge: L2 world-b noise perf hardening and report",
+    "61d8159a791f4bcb766ada326a64ddc958045a54 test(world-b): drop out-of-scope guards test added by another process",
+    "d0510e46893fff0ac4f862ac95c985a872fb4b31 world-c: add task report",
+    "5ab9f1db3d81510cc62d031b6e700f4edcb57ff5 docs(reports): world-b noise report (all four gates green, bit-exact, 1.21x)",
+    "fb5d3867a59e45e406e1a347a8fa36980dc49135 world-c: exact lazy-field and vein reach pruning, regenerate golden",
+    "2fdcf737202e97034d0a4025c52345f88b5e50d9 test(world): regenerate golden chunk hashes after L2 noise and feature merges",
+    "c6dc219fab14810e5267ef7311a23ca3c29ff940 world(noise): keep perlin samplers inlinable (1.21x faster, bit-exact)",
+    "b0a2d331105fe9d71710a788e8ad477773d43165 merge: L2 world-c caves, ores and vegetation",
+    "af58c642b63976a13cb1347bb52cb399887caf7a merge: L2 world-b noise basis hardening",
+    "b28f50b36d06f8514ec69edd10367a2421810fd8 world-c: harden cave/ore/vegetation determinism and add feature tests",
+    "4234e193ce658ebaaa581b910383e6ca135ff3e6 world(noise): harden perlin/fbm/warp/climate hot paths (v2)",
+    "e93d86aafc008c5a8c1e8c31163fbc5cdadbb9c9 docs(reports): add world-a status report with gate results",
+    "b4d410e1f17a03f96da01557cd5610705dbe1b2c Merge remote-tracking branch 'origin/feat/mc-20260916/world-a' into feat/mc-20260916/world-c",
+    "395745d82860b33663ecd38b182263ef7190d24e merge: take L1-A world-a base",
+    "be7923cc25376a788d746b56aec5677ca44b494b test(world): golden chunk hashes, determinism, biome, cave and ore suites",
+    "293ceb60c86953439d6d34fec9ce5c90f8daa428 feat(world): deterministic terrain, biomes, caves, ores and vegetation"
+  ],
+  "files_changed": [
+    "docs/reports/world-a.json",
+    "docs/reports/world-b.json",
+    "docs/reports/world-c.json",
+    "packages/world/package.json",
+    "packages/world/scripts/locate.ts",
+    "packages/world/scripts/probe.ts",
+    "packages/world/scripts/update-golden.ts",
+    "packages/world/src/__tests__/golden.json",
+    "packages/world/src/__tests__/world-a.features.test.ts",
+    "packages/world/src/__tests__/world-a.terrain.test.ts",
+    "packages/world/src/__tests__/world-b.noise.test.ts",
+    "packages/world/src/__tests__/world-c.features.test.ts",
+    "packages/world/src/biome/index.ts",
+    "packages/world/src/features/caves.ts",
+    "packages/world/src/features/index.ts",
+    "packages/world/src/features/ores.ts",
+    "packages/world/src/features/vegetation.ts",
+    "packages/world/src/index.ts",
+    "packages/world/src/internal.ts",
+    "packages/world/src/noise/climate.ts",
+    "packages/world/src/noise/fbm.ts",
+    "packages/world/src/noise/index.ts",
+    "packages/world/src/noise/perlin.ts",
+    "packages/world/src/terrain/column.ts",
+    "packages/world/src/terrain/height.ts",
+    "packages/world/src/testing/chunk-grid.ts"
+  ],
+  "checks": [
+    {
+      "name": "tsc",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "34f0eea6e98c4fd2",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/f1-tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "7d26606b53284468",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/f2-lint.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "c1843c8d265e407b",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/f3-test.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "5bd848d90ae648ce",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/f4-build.log"
+    },
+    {
+      "name": "world package tests (development gate, post-merge)",
+      "command": "pnpm --filter @voxelcraft/world test",
+      "job_id": "77d4f05cb7db40b1",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/m4-world-test.log"
+    },
+    {
+      "name": "golden fixture regeneration",
+      "command": "pnpm --filter @voxelcraft/world run golden:update",
+      "job_id": "65a696d5c93b4941",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "logs/m2-golden.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "[実装] createWorldGenerator(seed) が core-types の WorldGenerator を実装 (seed / version / sampleColumn / generateChunk / decorate / biomeAt)。16x16x256 チャンク、SEA_LEVEL=62、岩盤4層 (y=0 は必ず岩盤、以降は確率的)、6バイオーム (Plains / Forest / Desert / Snowy / Mountains / Ocean)、3Dノイズ洞窟 (cheese + ridged spaghetti)、深度依存の鉱石6種、樹木と植生の decorate。blocks は Uint16Array(65536) を core-types の blockIndex で、fluids は packFluid で書き込み。無限地形はチャンク座標のハッシュのみに依存する純関数生成で実現。\n\n[決定論] 乱数は core-types の hashU32 / hash01 / makeRng のみ。Math.random / Date.now / Math.sin / Math.cos はワールド生成コードで未使用 (テストでソース走査して検証)。同一シードで generateChunk の結果はバイト一致し、生成順 (正順 / 逆順 / 4分割並列相当) を変えても不変。\n\n[テスト] packages/world は 4ファイル 66テストすべて緑。内容は黄金ハッシュ (core-types hashBuffer、golden.json 5エントリ)、生成順不変、6バイオーム全出現、鉱石の深度分布 (平均 Y: DIAMOND 10.0 < REDSTONE 11.7 < GOLD 15.2 < LAPIS 16.6 < IRON 30.9 < COAL 41.7)、洞窟が地表を全消ししない (4096列中 0列が開口)、Ocean バイオームで水面が 62 (Snowy の薄氷は ICE も許容)。\n\n[L2 分担] world-b = ノイズ基盤 (perlin2 / perlin3 / fbm / domain warp / 気候ノイズ) の堅牢化と決定論テスト。ビット等価を保ったまま約1.21倍高速化し、warp2To / warpStages2 / perlin3Raw を追加。world-c = 洞窟 / 鉱石ベイン / 樹木と植生。岩盤侵食の修正 (削る下限を max(BEDROCK_LAYERS, minY+1) に)、海面下の封止と海岸帯の天井制限、鉱石を OreDef の [minY, maxY] に厳守 (非 STONE / 流体 / 地表 / 岩盤 / 既掘空洞は置換しない)、植生を幹→葉の2パス化。両 L2 のレポートは status=done、contract_changes_needed は空。\n\n[golden 再生成] L2 のノイズ / 地物変更で生成結果が変わったため、2fdcf73 で pnpm --filter @voxelcraft/world run golden:update により再生成 (手編集なし)。blocks ハッシュ 2052478105→2763474780 / 4223035867→1508117521 / 662254727→1825573235 / 477415400→2319082960 / 2191515253→2689750948、fluids は5件すべて 1582341573 で不変 (流体の退行なし)。最終マージ後にも再生成を実行し差分ゼロを確認。\n\n[性能 / 未達点] PERF.chunkGenBudgetMs = 4ms に対し未達。単体プロファイラでは 1.96ms (v1) / 4.73ms (world-c 計測、最終コード) だが、vitest 実行内では 8.6〜11.1 ms とばらつきが大きい (同一 env で他ジョブが並走、vitest のオーバーヘッド込み)。テストは BENCH.chunkGenAvgMsMax(6) × BENCH.failFactor(3) = 18ms を上限に緑。内訳 (world-c 計測): terrain sampling 0.86 + column fill 0.90 + caves 1.93 (halo 0.26 含む) + ores 0.73 ms。4ms を満たすには洞窟格子の粗化 (形状品質の低下) か terrain 側のキャッシュ導入が必要で、いずれも品質かスコープに影響するため未実施。数値をそのまま報告する。\n\n[意図的な逸脱] decorate は書き込みを対象チャンク内にクリップする方式 (v1 コメントの「隣接チャンクへ伸ばす」挙動からの変更)。境界をまたぐ木は隣接セルを各自のシードで再生成するため再現されるが、v1 の先着勝ち setIfAir は生成順依存だったため、順序不変性の受入条件を満たすにはクリップが必要。契約 (core-types) の変更は不要。\n\n[運用メモ] 最初の world-b L2 セッションが write_file 実行中に failed で停止し、sendMessageToSession での復旧も失敗したため、同じ worktree の未コミット作業を保全する指示付きで L2 を再起動して回収した。gha mcp のツール呼び出し自体は全件成功 (execute / write_file すべて state=exited, eof=true) で、失敗は Notion セッション API 側のみ。\n\n[既知の軽微な非準拠] pnpm format:check (prettier) はリポジトリ全体でタブインデントなのに .prettierrc.json に useTabs が無いため不一致となる (core-types など L0 のファイルも同様)。検証4本には含まれないため未対応で、修正には L0 専有のルート設定変更が必要。"
+}

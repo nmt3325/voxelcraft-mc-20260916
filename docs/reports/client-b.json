@@ -1,0 +1,106 @@
+{
+  "task": "client-b",
+  "branch": "feat/mc-20260916/client-b",
+  "status": "done",
+  "base_sha": "83c5553aacc1115c5c2e93a0622ceb685eb813ef",
+  "head_sha": "01105a5223015d679bd2683ae042f66c4e55ecab",
+  "commits": [
+    {
+      "sha": "01105a5223015d679bd2683ae042f66c4e55ecab",
+      "message": "feat(assets-gen): deterministic PNG atlas and WAV sound generators"
+    }
+  ],
+  "files_changed": [
+    "packages/assets-gen/src/__tests__/atlas.test.ts",
+    "packages/assets-gen/src/__tests__/determinism.test.ts",
+    "packages/assets-gen/src/__tests__/png-decode.ts",
+    "packages/assets-gen/src/__tests__/png.test.ts",
+    "packages/assets-gen/src/__tests__/sounds.test.ts",
+    "packages/assets-gen/src/atlas.ts",
+    "packages/assets-gen/src/cli.ts",
+    "packages/assets-gen/src/draw.ts",
+    "packages/assets-gen/src/dsp.ts",
+    "packages/assets-gen/src/index.ts",
+    "packages/assets-gen/src/palette.ts",
+    "packages/assets-gen/src/pattern.ts",
+    "packages/assets-gen/src/png.ts",
+    "packages/assets-gen/src/seed.ts",
+    "packages/assets-gen/src/sounds.ts",
+    "packages/assets-gen/src/tex-built.ts",
+    "packages/assets-gen/src/tex-fixtures.ts",
+    "packages/assets-gen/src/tex-ground.ts",
+    "packages/assets-gen/src/tex-liquid.ts",
+    "packages/assets-gen/src/tex-mineral.ts",
+    "packages/assets-gen/src/tex-plants.ts",
+    "packages/assets-gen/src/tex-props.ts",
+    "packages/assets-gen/src/tex-redstone.ts",
+    "packages/assets-gen/src/tex-wood.ts",
+    "packages/assets-gen/src/texture-list.ts",
+    "packages/assets-gen/src/texture-registry.ts",
+    "packages/assets-gen/src/tile.ts",
+    "packages/assets-gen/src/wav.ts",
+    "packages/assets-gen/src/write.ts",
+    "packages/assets-gen/src/zlib-lite.ts",
+    "docs/reports/client-b.json"
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm --filter @voxelcraft/assets-gen exec tsc --noEmit",
+      "job_id": "a520f8a8c62f4220",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "b-tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm --filter @voxelcraft/assets-gen run lint",
+      "job_id": "9dfae57df9a2425c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "b-lint.log"
+    },
+    {
+      "name": "test",
+      "command": "pnpm --filter @voxelcraft/assets-gen run test",
+      "job_id": "9dfae57df9a2425c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "b-test.log"
+    },
+    {
+      "name": "generate-twice",
+      "command": "pnpm --filter @voxelcraft/assets-gen run generate (run twice, sha256 of all 22 outputs compared)",
+      "job_id": "7f210aebe4fb4b1e",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "b-gen1.log, b-gen2.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": {
+    "textures": 73,
+    "sounds": 19,
+    "generated_files": 22,
+    "atlas_png_bytes": 22345,
+    "atlas_png_sha256": "f28cbb71da3d726171033c82980c9660bf97a6c054b0a590ff77f2edc3c274aa",
+    "atlas_json_sha256": "b74f77f297ec974c0f8b1020c7c58a0eba713aa7964cc298de25092e482672d6",
+    "sounds_json_sha256": "40f89221c8aefd7f19698cfc3b6ce2b872a400e7cbd30fc6828a2998f7821cb4",
+    "sample_rate": 22050,
+    "determinism": "Two consecutive `run generate` invocations produced identical sha256 for all 22 files (diff exit 0). vitest additionally asserts buildAtlas/buildSounds byte equality across calls and writeAllAssets sha256 equality when written twice into the same dir and into two separate temp dirs.",
+    "tests": "4 files, 23 tests: PNG round trip + chunk CRC + CRC32/Adler32 vectors + store-deflate inflate round trip, atlas completeness (layerOf/layers/missing at 0, unique 0..255), alpha policy per render layer, WAV header/chunk/sampleRate/non-silence, determinism.",
+    "dependencies": "No new dependencies. PNG uses node:zlib deflateSync with fixed options (level 9, memLevel 9, windowBits 15, default strategy) plus an own store-only deflate fallback; crc32 and adler32 are hand written. No Date.now, new Date or Math.random: all variation comes from core-types hashU32 / hash01 / makeRng.",
+    "decisions": [
+      "atlas.json layers are row-major and exactly the 73 required names, missing at index 0; layerOf[name] === index holds for all.",
+      "Cutout tiles (plants, torch, ladder, redstone_wire, door_lower, door_upper) are snapped to alpha 0 or 255; door_lower/door_upper end up fully opaque by design.",
+      "Translucent tiles are water, ice, glass and lava (lava keeps an alpha 250 crust), each verified to contain 0 < a < 255 pixels.",
+      "grass_top, grass_side and the three leaves stay near grayscale so client-a can apply biome tint on vertex lane 7.",
+      "generated/** is never git added; root .gitignore was not modified.",
+      "docs/reports/client-b.json is committed on top of head_sha as a docs-only commit, so remote HEAD is one commit ahead of head_sha."
+    ]
+  }
+}
