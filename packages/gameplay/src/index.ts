@@ -17,3 +17,10 @@ export * from './persistence'
 export * from './redstone'
 // Experience orbs, the level curve and the xp gains that feed them.
 export * from './experience'
+
+// Farmland, hydration and the eight-stage crop growth cycle.
+export * from './farming'
+// Both redstone and farming answer "can this block be replaced": keep the
+// redstone meaning as the default export and expose the farming one by name.
+export { isReplaceable } from './redstone'
+export { isReplaceable as isFarmReplaceable } from './farming'
