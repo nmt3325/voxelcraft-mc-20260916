@@ -381,3 +381,57 @@ bench averages from the committed `tests/bench/results/bench.json` baseline.
 Static counts measured at this sha: 58 crafting recipes (53 v1 plus 5 v2), 119
 atlas layers, 24 procedural WAVs, `CONTRACT_VERSION` 1.1.0 and
 `CONTRACT_V2_VERSION` 1.1.0.
+
+## D-080 fix-e merged: apps/game no longer ships its own block and item tables
+
+Closes rev5 blocker B-02 and major M-02. `apps/game/src/registries.ts` is now a thin re-export
+of `BLOCKS` / `ITEMS` from `@voxelcraft/gameplay` (`BLOCKS_V2` and `ITEMS_V2` are aliases), so
+the application cannot drift from the contract registries again. Evidence: a drift probe over
+all 36 v2 ids printed `TOTAL_DRIFT_IDS=14 of 36` and `TOTAL_DRIFT_FIELDS=40` before the fix and
+`TOTAL_DRIFT_IDS=0 of 36` / `TOTAL_DRIFT_FIELDS=0` after it. The Nether portal is unbreakable
+again (`hardness=-1`, `itemId=0`, `breakable_by_main_ts=false`) and the three crops no longer
+carry a pickable `itemId`. `apps/game/src/main.ts` now treats a negative hardness as unbreakable
+and only pockets `definition.itemId` when it is greater than zero. A new
+`apps/game/src/registries.test.ts` (10 tests) fails if the app and the gameplay registries ever
+diverge; the red proof run exited 1 with `Error: apps/game cannot resolve block 70` before the
+fix and 19 tests pass after it. Merged into `integration/mc-20260916` as 3968bd9a with all nine
+gates green; the bundle shrank from 1040207 to 1037502 bytes raw.
+
+## D-081 fix-f merged: durable-or-loud world store writes
+
+Closes rev6 blocker B-1. The authoritative server no longer accepts a block edit it cannot keep:
+`worldStore` pins a column before eviction can consider it, and when every resident column
+already holds edits the write is refused, logged loudly and never broadcast. Evidence at shipped
+config with 400 edits in 400 distinct columns: before, 400 accepted / 338 readable /
+62 unreadable with the first loss at index 338; after, 338 accepted / 62 refused / 0 unreadable
+and 338 of 338 columns resident against the 338 cap. Three regression tests
+(`editBroadcast`, `worldStoreCap`, `worldStoreEdits`) reproduce the loss; the red run exited 1
+with four failures and the restored implementation exits 0. The bench harness also stops
+hard-coding `task`, derives it from the git branch, records `git.branch/commit/dirty`, gates
+`lightSeedAvgMs` against the bench-local light budget instead of the chunk-gen budget and
+compares `sectionMeshAvgMs` against `PERF.sectionMeshBudgetMs` instead of printing it beside a
+budget nothing checked. Merged as 870dccab with all nine gates green.
+
+## D-082 the v1.2.0 README is rebuilt from measured numbers
+
+rev5 M-03 and rev6's documentation major are closed. The README now documents the Nether
+(including the D-063 persistence limitation), the optional authoritative WebSocket server
+(`pnpm --filter @voxelcraft/server start`, `ws://127.0.0.1:8787/ws`), `@voxelcraft/net` and
+`apps/server` in both the architecture diagram and the workspace table, and a `Known
+limitations` section. Every number in it was measured on integration 870dccab rather than
+copied forward: bundle 1037502 B raw / 451420 B gzipped, 13 Playwright tests across 7 specs,
+58 crafting recipes (53 v1 plus 5 v2), 119 texture atlas layers, 24 procedural WAVs,
+`CONTRACT_VERSION` 1.1.0 and `CONTRACT_V2_VERSION` 1.1.0, and bench averages of chunk generation
+2.093 ms, chunk meshing 3.717 ms, section meshing 0.743 ms, sim tick 1.207 ms and light seeding
+4.647 ms. The build instructions use `pnpm install --frozen-lockfile`, matching CI.
+
+## D-083 fix-e and fix-f self-reported blocked; adjudicated as complete
+
+Both children ended with a `blocked` report whose only unmet gate was the root `eslint .` run
+that D-076 traced to an L0-owned file. Each child ran a control experiment on a pristine base
+tree and showed the same two pre-existing errors, so the block was not theirs. L0 verified both
+branches against git rather than against the reports: the changed-file lists stayed inside the
+owned paths, the red-to-green proofs were reproduced from the recorded job ids, and the nine-gate
+merge check passed on each merge commit. Both tasks are therefore recorded as done, and the
+child prompt template now names the exact lint command that counts as gate 3 so this class of
+false block cannot repeat.
