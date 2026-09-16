@@ -7,6 +7,12 @@
  * Kick, TimeSync). Every rejection path ends in a frozen NET_KICK_REASON so a
  * client always learns why it was dropped.
  *
+ * Three budgets bound what a single peer can cost the server, and they are all
+ * enforced here because this is the only layer that sees a whole message:
+ *   - frames and bytes per connection (rateLimit.ts)
+ *   - inputs and travel per server tick per client (inputGate.ts)
+ *   - work per tick, shared by every client (rateLimit.ts)
+ *
  * Chunk streaming is injected: this file owns the wire format, while the queue
  * and the per-client budget live behind the ChunkStreamer interface.
  */
@@ -27,6 +33,8 @@ import {
 	FrameSplitter,
 	NetProtocolError,
 	SessionRegistry,
+	assertClientOpcode,
+	assertCompatibleProtocol,
 	decodeBlockEdit,
 	decodeChat,
 	decodeHello,
@@ -43,17 +51,25 @@ import {
 	encodeSnapshot,
 	encodeTimeSync,
 	encodeWelcome,
-	isClientOpcode,
 	isCompatible,
 	type NetFrame,
 	type Session,
 	type SessionTransport,
 } from '@voxelcraft/net'
 import { attachWsServer, type WsSocket } from '@voxelcraft/net/ws'
+import { InputGate } from './inputGate'
 import { desiredMoveFor } from './movement'
+import {
+	createInboundBuckets,
+	resolveWorkBudget,
+	type InboundBuckets,
+	type InboundLimitOptions,
+	type WorkBudget,
+	type WorkBudgetOptions,
+} from './rateLimit'
 import { TickLoop, isSnapshotTick } from './tick'
 import type { PlayerState, ServerWorld } from './types'
-import { clampMovement, createServerWorld, validateBlockEdit } from './world'
+import { clampHorizontalStep, clampMovement, createServerWorld, validateBlockEdit } from './world'
 
 /** Entity kind used for players in snapshots. */
 export const PLAYER_ENTITY_KIND = 0
@@ -83,8 +99,13 @@ export interface ChunkStreamer {
 	/** Re-centre the queue after the player crossed a chunk border. */
 	recenter(playerId: EntityId, cx: number, cz: number): void
 	forget(playerId: EntityId): void
-	/** Columns to send this tick, per client budget already applied. */
-	next(playerId: EntityId, nowMs: number): readonly StreamTarget[]
+	/**
+	 * Columns to send this tick, per client budget already applied.
+	 *
+	 * `limit` is the caller's remaining work budget for the tick: whatever is
+	 * not handed over stays queued for the next one.
+	 */
+	next(playerId: EntityId, nowMs: number, limit?: number): readonly StreamTarget[]
 }
 
 export interface GameServerOptions {
@@ -96,6 +117,10 @@ export interface GameServerOptions {
 	/** Pre-built world, mostly for tests. */
 	readonly world?: ServerWorld
 	readonly streamer?: ChunkStreamer
+	/** Per connection inbound limits. Defaults to INBOUND. */
+	readonly inbound?: InboundLimitOptions
+	/** Per tick work budget. Defaults to WORK. */
+	readonly work?: WorkBudgetOptions
 	readonly now?: () => number
 }
 
@@ -104,7 +129,14 @@ interface Client {
 	readonly socket: WsSocket
 	/** One reassembly buffer per socket: net frames can straddle ws messages. */
 	readonly splitter: FrameSplitter
+	/** Per tick input and travel budget. */
+	readonly inputs: InputGate
+	/** Per connection frame and byte budget. */
+	readonly inbound: InboundBuckets
 	player: PlayerState | null
+	/** The server tick `edits` is counted against. */
+	editTick: number
+	edits: number
 }
 
 export class GameServer {
@@ -116,6 +148,8 @@ export class GameServer {
 	private readonly streamer: ChunkStreamer | null
 	private readonly loop: TickLoop
 	private readonly clock: () => number
+	private readonly inboundLimits: InboundLimitOptions
+	private readonly work: WorkBudget
 	private detach: (() => void) | null
 	private timeOfDay = 0
 
@@ -126,10 +160,12 @@ export class GameServer {
 		this.sessions = new SessionRegistry(options.maxPlayers ?? NET.maxPlayers)
 		this.streamer = options.streamer ?? null
 		this.path = options.path ?? NET.path
+		this.inboundLimits = options.inbound ?? {}
+		this.work = resolveWorkBudget(options.work)
 		this.http = createServer((_req, res) => {
 			// The websocket upgrade is the only route; anything else is a probe.
 			res.writeHead(404, { 'content-type': 'text/plain' })
-			res.end('voxelcraft server: websocket only\n')
+			res.end('voxelcraft server: websocket only\\n')
 		})
 		this.detach = attachWsServer(this.http, {
 			path: this.path,
@@ -216,8 +252,18 @@ export class GameServer {
 			},
 			remote: socket.remote,
 		}
-		const session = this.sessions.open(transport, this.clock())
-		const client: Client = { session, socket, splitter: new FrameSplitter(), player: null }
+		const nowMs = this.clock()
+		const session = this.sessions.open(transport, nowMs)
+		const client: Client = {
+			session,
+			socket,
+			splitter: new FrameSplitter(),
+			inputs: new InputGate(),
+			inbound: createInboundBuckets(this.inboundLimits, nowMs),
+			player: null,
+			editTick: -1,
+			edits: 0,
+		}
 		this.clients.set(session.id, client)
 		socket.on({
 			onBinary: (payload) => this.receive(client, payload),
@@ -228,6 +274,11 @@ export class GameServer {
 
 	private receive(client: Client, payload: Uint8Array): void {
 		try {
+			// Bytes are charged before anything is parsed: a flood of junk must
+			// cost the sender its connection, not cost us the reassembly.
+			if (!client.inbound.bytes.take(payload.byteLength, this.clock())) {
+				throw new NetProtocolError(NET_KICK_REASON.BadMessage)
+			}
 			for (const frame of client.splitter.push(payload)) this.handle(client, frame)
 		} catch (error) {
 			this.kick(
@@ -238,9 +289,18 @@ export class GameServer {
 	}
 
 	private handle(client: Client, frame: NetFrame): void {
+		// The header carries a version byte that used to be decoded and then
+		// ignored, which let a peer from another protocol generation be misread
+		// field by field instead of being told to go away.
+		assertCompatibleProtocol(frame.version)
 		// A server opcode arriving from a client means the peer is confused.
-		if (!isClientOpcode(frame.opcode)) throw new NetProtocolError(NET_KICK_REASON.BadMessage)
+		assertClientOpcode(frame.opcode)
 		const nowMs = this.clock()
+		// One token per frame, so a burst is bounded even when every single frame
+		// in it is legal on its own.
+		if (!client.inbound.frames.take(1, nowMs)) {
+			throw new NetProtocolError(NET_KICK_REASON.BadMessage)
+		}
 		client.session.heartbeat.markSeen(nowMs)
 		switch (frame.opcode) {
 			case NET_OPCODE.Hello:
@@ -307,17 +367,35 @@ export class GameServer {
 			),
 		)
 		session.transport.send(this.timeSyncFrame(this.loop.tick, nowMs))
-		this.streamer?.track(playerId, worldToChunk(Math.floor(player.x)), worldToChunk(Math.floor(player.z)))
+		this.streamer?.track(
+			playerId,
+			worldToChunk(Math.floor(player.x)),
+			worldToChunk(Math.floor(player.z)),
+		)
 	}
 
 	private onInput(client: Client, payload: Uint8Array): void {
 		const player = this.requirePlayer(client)
 		const input = decodeInput(payload)
-		// Replays and reordered packets must never rewind the authority.
-		if (input.tick < player.lastTick) return
+		// One input per server tick plus the frozen jitter slack, and one tick of
+		// travel to share between however many of them arrive. Applying movement
+		// per message let 200 Input frames stamped with one tick walk 43 blocks.
+		const verdict = client.inputs.admit(input, this.loop.tick)
+		if (!verdict.ok) {
+			// Jitter and replays are dropped in silence; a sustained flood is a
+			// deliberate client and gets the frozen bad message reason.
+			if (verdict.flooding) throw new NetProtocolError(NET_KICK_REASON.BadMessage)
+			return
+		}
 		const beforeCx = worldToChunk(Math.floor(player.x))
 		const beforeCz = worldToChunk(Math.floor(player.z))
-		const moved = clampMovement(player, desiredMoveFor(player, input, this.world))
+		const moved = clampHorizontalStep(
+			player,
+			clampMovement(player, desiredMoveFor(player, input, this.world)),
+			verdict.horizontalBudget,
+		)
+		// Charged before the move lands: this is the ground the tick paid for.
+		client.inputs.spend(Math.hypot(moved.x - player.x, moved.z - player.z))
 		player.x = moved.x
 		player.y = moved.y
 		player.z = moved.z
@@ -335,11 +413,19 @@ export class GameServer {
 	private onBlockEdit(client: Client, payload: Uint8Array): void {
 		const player = this.requirePlayer(client)
 		const edit = decodeBlockEdit(payload)
+		// A per tick edit budget: the rest of a burst is dropped, not queued.
+		if (!this.spendEditBudget(client)) return
 		const verdict = validateBlockEdit(player, edit, this.world)
 		if (!verdict.ok) {
-			// Hand the authoritative block back so the client reverts its guess.
-			// Out of world coordinates have no block to quote, so stay silent.
-			if (verdict.reason !== 'out_of_world') {
+			// Hand the authoritative block back so the client reverts its guess,
+			// but only for a column that is already resident. Reading the block of
+			// a rejected edit is what let a client generate and cache the world one
+			// out of reach edit at a time, and an out of world coordinate has no
+			// block to quote in the first place.
+			if (
+				verdict.reason !== 'out_of_world' &&
+				this.world.hasColumn(worldToChunk(edit.x), worldToChunk(edit.z))
+			) {
 				const current = this.world.block(edit.x, edit.y, edit.z)
 				client.session.transport.send(this.blockChangeFrame(edit.x, edit.y, edit.z, current))
 			}
@@ -348,6 +434,17 @@ export class GameServer {
 		if (!this.world.setBlock(edit.x, edit.y, edit.z, verdict.block)) return
 		// Including the editor: it must confirm against the server, not its guess.
 		this.sessions.broadcast(this.blockChangeFrame(edit.x, edit.y, edit.z, verdict.block))
+	}
+
+	/** True when this client still has edit budget left in the current tick. */
+	private spendEditBudget(client: Client): boolean {
+		if (client.editTick !== this.loop.tick) {
+			client.editTick = this.loop.tick
+			client.edits = 0
+		}
+		if (client.edits >= this.work.editsPerTick) return false
+		client.edits += 1
+		return true
 	}
 
 	private onChat(client: Client, payload: Uint8Array): void {
@@ -405,11 +502,16 @@ export class GameServer {
 	private stream(nowMs: number): void {
 		const streamer = this.streamer
 		if (streamer === null) return
+		// A shared per tick budget on top of each client's own pace: a full server
+		// must not be able to spend a whole tick encoding columns.
+		let budget = this.work.chunkEncodesPerTick
 		for (const session of this.sessions.active()) {
+			if (budget <= 0) return
 			const playerId = session.playerId
 			if (playerId === null) continue
-			for (const target of streamer.next(playerId, nowMs)) {
+			for (const target of streamer.next(playerId, nowMs, budget)) {
 				session.transport.send(this.chunkDataFrame(target.cx, target.cz))
+				budget -= 1
 			}
 		}
 	}
