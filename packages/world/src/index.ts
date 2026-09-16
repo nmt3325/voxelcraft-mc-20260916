@@ -1,7 +1,7 @@
 /**
  * @voxelcraft/world - deterministic, infinite terrain generation.
  *
- * Pipeline for one chunk:
+ * Pipeline for one overworld chunk:
  *   1. sampleChunk    surface height and biome for all 256 columns
  *   2. fillChunkColumns bedrock, stone, biome surface, ocean up to SEA_LEVEL
  *   3. caves.carveChunk 3D noise caves under a protected surface crust
@@ -9,11 +9,22 @@
  * decorate() then adds trees and plants through a VoxelEditView, because those
  * features may cross a chunk border.
  *
+ * The nether runs its own pipeline in `src/nether/`, selected through the
+ * dimension argument of createWorldGenerator. The default stays the overworld,
+ * so every v1 caller and every frozen golden keeps its exact behaviour.
+ *
  * Every step is a pure function of (seed, cx, cz), so generating a region
  * forwards, backwards or in parallel quarters produces byte identical chunks.
  */
-import type { BiomeId, ColumnSample, VoxelEditView, WorldGenerator } from '@voxelcraft/core-types'
-import { CHUNK_AREA, WORLD_GEN_VERSION } from '@voxelcraft/core-types'
+import type {
+	BiomeId,
+	ColumnSample,
+	DimensionId,
+	VoxelEditView,
+	WorldGenerator,
+} from '@voxelcraft/core-types'
+import { CHUNK_AREA, DIMENSION, WORLD_GEN_VERSION } from '@voxelcraft/core-types'
+import { createNetherGenerator } from './dimension'
 import { createFeatureSet } from './features'
 import { createNoiseBasis } from './noise'
 import { fillChunkColumns } from './terrain/column'
@@ -21,7 +32,8 @@ import { createTerrain } from './terrain/height'
 
 export const PACKAGE_NAME = '@voxelcraft/world'
 
-export function createWorldGenerator(seed: number): WorldGenerator {
+/** Overworld generator. This is what the frozen goldens describe. */
+export function createOverworldGenerator(seed: number): WorldGenerator {
 	const s = seed >>> 0
 	const noise = createNoiseBasis(s)
 	const terrain = createTerrain(s, noise)
@@ -58,8 +70,24 @@ export function createWorldGenerator(seed: number): WorldGenerator {
 	}
 }
 
+/**
+ * Generator for one dimension of one seed. The dimension argument is optional
+ * and defaults to the overworld, so `createWorldGenerator(seed)` means exactly
+ * what it meant in v1.
+ */
+export function createWorldGenerator(
+	seed: number,
+	dimension: DimensionId = DIMENSION.Overworld,
+): WorldGenerator {
+	return dimension === DIMENSION.Nether
+		? createNetherGenerator(seed)
+		: createOverworldGenerator(seed)
+}
+
 export * from './internal'
 export { BIOMES, biomeDef, chooseBiome } from './biome'
+export { NETHER_BIOME, createNetherGenerator, dimensionParams } from './dimension'
+export { createNetherTerrain } from './nether'
 export { createNoiseBasis } from './noise'
 export { createFeatureSet } from './features'
 export { createTerrain, surfaceHeight } from './terrain/height'
