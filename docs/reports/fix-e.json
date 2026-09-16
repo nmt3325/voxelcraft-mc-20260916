@@ -1,0 +1,102 @@
+{
+	"task": "fix-e",
+	"branch": "feat/mc-20260916/fix-e",
+	"status": "blocked",
+	"base_sha": "40e1a3f5c6d35ad364af6e49a296a64756921850",
+	"head_sha": "5eb3a42c679b20a5c883c3681b96c8af0b0bd9ca",
+	"commits": ["5eb3a42c679b20a5c883c3681b96c8af0b0bd9ca"],
+	"files_changed": [
+		"apps/game/src/registries.ts",
+		"apps/game/src/registries.test.ts",
+		"apps/game/src/main.ts",
+		"docs/reports/fix-e.json"
+	],
+	"checks": [
+		{
+			"name": "install",
+			"command": "pnpm install --no-frozen-lockfile",
+			"job_id": "c439bc0a962241b4",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "Scope: all 12 workspace projects. Lockfile is up to date, resolution step skipped. Already up to date. RC install equals 0"
+		},
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "47b71114ce634fba",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "no diagnostics from any workspace project. RC typecheck equals 0"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm lint",
+			"job_id": "bbe7b0572bc7465e",
+			"state": "exited",
+			"exit_code": 1,
+			"eof": true,
+			"log": "eslint . reports scripts/wire-deps.cjs 3:12 and 4:14 error 'A require() style import is forbidden' (@typescript-eslint/no-require-imports), 2 problems (2 errors, 0 warnings). RC lint equals 1. The identical failure reproduces on the pristine base sha and the file is outside owned paths, see notes.lint_gate"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "fccfddf0a8184e86",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "11 of 12 projects ran. apps/game 19 passed across 3 files including the new src/registries.test.ts (10 tests). gameplay 220, world 176, sim 166, net 149, client 140, apps/server 106, core-types 46, assets-gen 32, tests/e2e unit 3. RC test equals 0"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "fc6156b4cdb64c17",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "assets-gen 119 textures and 24 sounds, atlas.png 34673 bytes. vite build 225 modules, dist/assets/index-CXksUf-q.js 762.48 kB gzip 212.55 kB. RC build equals 0"
+		},
+		{
+			"name": "report_size",
+			"command": "bash scripts/report-size.sh",
+			"job_id": "7dabe7370e0c4bc8",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "TOTAL raw=1037502 gzip=451420. RC report_size equals 0"
+		},
+		{
+			"name": "e2e",
+			"command": "pnpm test:e2e",
+			"job_id": "319ed59e85794d3e",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "playwright ran 13 tests with 1 worker, 13 passed in 22.2s, including the nether portal round trip, the farming harvest, the persistence reload and worker meshing. RC e2e equals 0"
+		},
+		{
+			"name": "bench",
+			"command": "pnpm bench",
+			"job_id": "fa7a52d2b6584422",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "chunkGenAvgMs 2.012 budget 6, chunkMeshAvgMs 3.617 budget 12, simTickAvgMs 1.288 budget 8, lightSeedAvgMs 4.851 budget 6, all ok. RC bench equals 0. tests/bench/results/bench.json restored with git checkout afterwards, RC bench_artifact_restored equals 0"
+		}
+	],
+	"contract_changes_needed": false,
+	"notes": {
+		"b02_root_cause": "apps/game/src/registries.ts declared its own v2 block and item tables instead of reading the fixed gameplay registries. 14 of the 18 v2 block ids differed across 40 fields; all 18 v2 item ids already matched.",
+		"drift_before": "Probe job d77d2fb86ce9462f, run before any fix: BLOCK_DRIFT_IDS=14 of 18 (fields=40), ITEM_DRIFT_IDS=0 of 18 (fields=0), TOTAL_DRIFT_IDS=14 of 36, TOTAL_DRIFT_FIELDS=40. Player visible lines: 'PORTAL app hardness=0 itemId=65 breakable_by_main_ts=true', 'PORTAL item 65 defined in app items: false', 'CROP 72/73/74 app itemId=72/73/74 pickable=true'.",
+		"drift_ids": "64 minTier and drops; 65 replaceable, hardness, soundGroup, itemId; 67 displayName and drops; 68 minTier and drops; 69 minTier and drops; 71 displayName and itemId; 72, 73 and 74 displayName, replaceable, drops, itemId; 75 fullCube, opacity, emission, skyPassThrough, drops; 78 layer, skyPassThrough, minTier, drops; 79 displayName; 80 and 81 layer and skyPassThrough. Already identical: 66, 70, 76, 77.",
+		"drift_after": "Same probe re-run after the fix, job 069b50ee918f4fb8: BLOCK_DRIFT_IDS=0 of 18, ITEM_DRIFT_IDS=0 of 18, TOTAL_DRIFT_IDS=0 of 36, TOTAL_DRIFT_FIELDS=0. Player visible lines: 'PORTAL app hardness=-1 itemId=0 breakable_by_main_ts=false', 'PORTAL item 65 defined in app items: false', 'CROP 72/73/74 app itemId=0 pickable=false'. The probe script itself was deleted and is not committed.",
+		"fix": "registries.ts now re-exports the shipped registries, BLOCKS_V2 = BLOCKS and ITEMS_V2 = ITEMS from @voxelcraft/gameplay, and keeps only the app helpers: 27 insertions, 237 deletions. main.ts breakAt treats a negative hardness as the contract unbreakable case, bedrock and the Nether portal at hardness -1, and only pockets definition.itemId when it is greater than 0. The portal can no longer be broken and can never insert item id 65, and mature wheat, carrot and potato carry itemId 0 so they cannot be pocketed and replanted. The client atlas and render mapping are untouched and both gate 5 and gate 7 stay green.",
+		"recipes": "RECIPES_V2 is deliberately not re-exported: craftFromInventory and craftableFromInventory take only the inventory and default to the shipped RECIPES internally, so an app level alias would be dead code.",
+		"m02_test": "apps/game/src/registries.test.ts, 10 tests, imports the real apps/game registry module and asserts contiguous band coverage for ids 64-81 and 305-322, field for field parity with the gameplay registries for all 36 ids over 23 block fields and 12 item fields, the portal and crop invariants that the drift broke, and that every app helper reads those same registries.",
+		"red_green_proof": "Red, job c6ebc7a5826344d6: the app block registry was temporarily rebuilt without BLOCK_V2.FARMLAND, the reviewer's own experiment. 4 failed, 15 passed, RC red_test equals 1, with 'AssertionError: expected [ Array(1) ] to deeply equal []' and the received value 'block 70 farmland: missing from apps/game', plus three 'Error: apps/game cannot resolve block 70'. Green, job 8083adab10c34830: the file was restored byte identically, sha256 0445a52965f96df3ae97f65033ee5bcbbbbad9c291237ce0eda79dc168281687 at 2646 bytes, and RC green_test equals 0 with 19 passed.",
+		"lint_gate": "Gate 3 in the brief is 'pnpm lint', which runs eslint over the whole repo and fails only on scripts/wire-deps.cjs. Control experiment job ad42632907034e6a: with the three apps/game files stashed the tree is pristine base 40e1a3f5 and the same command still fails, 'RC lint_at_base equals 1', with the identical two errors. scripts/wire-deps.cjs is byte identical to base and the eslint config is untouched; eslint over the three changed files exits 0. rev5 measured this gate as 'pnpm -r lint', which exits 0 both at base, 'RC recursive_lint_at_base equals 0', and on this branch tip, 'RC recursive_lint_mine equals 0'. Closing gate 3 needs an edit in scripts/ or the root eslint config, both off limits for fix-e, so it is an L0 item.",
+		"known_gap": "Pre-existing and out of scope: the break path pockets definition.itemId directly with no tier gate, so breaking QUARTZ_ORE, id 67, yields block item 67 rather than NETHER_QUARTZ, item 312. Not part of B-02 and left untouched.",
+		"report_commit": "head_sha and commits record the code commit. This report file is added in the commit that follows it, which becomes the branch tip, because a JSON file cannot contain its own commit sha."
+	}
+}
