@@ -6,68 +6,68 @@ import type { UiPanel, UiSnapshot } from './types'
 const HUD_SCREENS = new Set(['playing', 'inventory', 'pause'])
 
 export interface HudHost {
-  onSelectHotbar?(index: number): void
-  onPlaySound?(name: string): void
+	onSelectHotbar?(index: number): void
+	onPlaySound?(name: string): void
 }
 
 export function createHud(doc: Document, host: HudHost): UiPanel {
-  const crosshair = el(doc, 'div', { class: 'vc-crosshair', 'data-testid': 'crosshair' })
+	const crosshair = el(doc, 'div', { class: 'vc-crosshair', 'data-testid': 'crosshair' })
 
-  const healthFill = el(doc, 'span', { class: 'vc-bar-fill' })
-  const healthLabel = el(doc, 'span', { class: 'vc-bar-label' })
-  const health = el(doc, 'div', { class: 'vc-bar vc-bar-health', 'data-testid': 'health' }, [
-    healthFill,
-    healthLabel,
-  ])
+	const healthFill = el(doc, 'span', { class: 'vc-bar-fill' })
+	const healthLabel = el(doc, 'span', { class: 'vc-bar-label' })
+	const health = el(doc, 'div', { class: 'vc-bar vc-bar-health', 'data-testid': 'health' }, [
+		healthFill,
+		healthLabel,
+	])
 
-  const hungerFill = el(doc, 'span', { class: 'vc-bar-fill' })
-  const hungerLabel = el(doc, 'span', { class: 'vc-bar-label' })
-  const hunger = el(doc, 'div', { class: 'vc-bar vc-bar-hunger', 'data-testid': 'hunger' }, [
-    hungerFill,
-    hungerLabel,
-  ])
+	const hungerFill = el(doc, 'span', { class: 'vc-bar-fill' })
+	const hungerLabel = el(doc, 'span', { class: 'vc-bar-label' })
+	const hunger = el(doc, 'div', { class: 'vc-bar vc-bar-hunger', 'data-testid': 'hunger' }, [
+		hungerFill,
+		hungerLabel,
+	])
 
-  const hotbar = el(doc, 'div', { class: 'vc-hotbar', 'data-testid': 'hotbar' })
-  const slots: SlotView[] = []
-  for (let i = 0; i < INVENTORY.hotbarSlots; i++) {
-    const view = createSlotView(doc, `hotbar-slot-${i}`, i)
-    view.element.addEventListener('click', () => {
-      host.onPlaySound?.('ui.click')
-      host.onSelectHotbar?.(i)
-    })
-    slots.push(view)
-    hotbar.appendChild(view.element)
-  }
+	const hotbar = el(doc, 'div', { class: 'vc-hotbar', 'data-testid': 'hotbar' })
+	const slots: SlotView[] = []
+	for (let i = 0; i < INVENTORY.hotbarSlots; i++) {
+		const view = createSlotView(doc, `hotbar-slot-${i}`, i)
+		view.element.addEventListener('click', () => {
+			host.onPlaySound?.('ui.click')
+			host.onSelectHotbar?.(i)
+		})
+		slots.push(view)
+		hotbar.appendChild(view.element)
+	}
 
-  const element = el(doc, 'div', { class: 'vc-hud', 'data-testid': 'hud' }, [
-    crosshair,
-    el(doc, 'div', { class: 'vc-stats' }, [health, hunger]),
-    hotbar,
-  ])
+	const element = el(doc, 'div', { class: 'vc-hud', 'data-testid': 'hud' }, [
+		crosshair,
+		el(doc, 'div', { class: 'vc-stats' }, [health, hunger]),
+		hotbar,
+	])
 
-  return {
-    element,
-    update(snapshot: UiSnapshot): void {
-      setHidden(element, !HUD_SCREENS.has(snapshot.screen))
-      setHidden(crosshair, snapshot.screen !== 'playing')
+	return {
+		element,
+		update(snapshot: UiSnapshot): void {
+			setHidden(element, !HUD_SCREENS.has(snapshot.screen))
+			setHidden(crosshair, snapshot.screen !== 'playing')
 
-      setText(healthLabel, `${Math.round(snapshot.health)} / ${Math.round(snapshot.maxHealth)}`)
-      setAttr(
-        healthFill,
-        'style',
-        `width:${percent(snapshot.health, snapshot.maxHealth).toFixed(1)}%`,
-      )
-      setText(hungerLabel, `${Math.round(snapshot.hunger)} / ${Math.round(snapshot.maxHunger)}`)
-      setAttr(
-        hungerFill,
-        'style',
-        `width:${percent(snapshot.hunger, snapshot.maxHunger).toFixed(1)}%`,
-      )
+			setText(healthLabel, `${Math.round(snapshot.health)} / ${Math.round(snapshot.maxHealth)}`)
+			setAttr(
+				healthFill,
+				'style',
+				`width:${percent(snapshot.health, snapshot.maxHealth).toFixed(1)}%`,
+			)
+			setText(hungerLabel, `${Math.round(snapshot.hunger)} / ${Math.round(snapshot.maxHunger)}`)
+			setAttr(
+				hungerFill,
+				'style',
+				`width:${percent(snapshot.hunger, snapshot.maxHunger).toFixed(1)}%`,
+			)
 
-      for (let i = 0; i < slots.length; i++) {
-        slots[i].update(snapshot.hotbar[i] ?? null)
-        slots[i].setSelected(i === snapshot.selectedSlot)
-      }
-    },
-  }
+			for (let i = 0; i < slots.length; i++) {
+				slots[i].update(snapshot.hotbar[i] ?? null)
+				slots[i].setSelected(i === snapshot.selectedSlot)
+			}
+		},
+	}
 }
