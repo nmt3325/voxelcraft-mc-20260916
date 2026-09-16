@@ -1,0 +1,113 @@
+{
+  "task": "L1-F world subtree: nether dimension, portal support, village generation, generator performance H-06",
+  "branch": "feat/mc-20260916/v2-world",
+  "status": "in_progress",
+  "base_sha": "965d7cb4b76414e418627011e10b87f9655f84b6",
+  "head_sha": "5946241568c4eacfdc2396e33d4ad9cd2c4202d7",
+  "commits": [
+    {
+      "sha": "420f4ad86ffea8d6cd6c8ff90ef725fd40309140",
+      "subject": "feat(world): dimension seam and nether bulk terrain"
+    },
+    {
+      "sha": "5946241568c4eacfdc2396e33d4ad9cd2c4202d7",
+      "subject": "test(world): pin nether golden chunks in their own fixture block"
+    }
+  ],
+  "files_changed": [
+    "packages/world/scripts/update-golden.ts",
+    "packages/world/src/__tests__/golden.json",
+    "packages/world/src/__tests__/world-f.nether-golden.test.ts",
+    "packages/world/src/__tests__/world-f.nether-terrain.test.ts",
+    "packages/world/src/dimension.ts",
+    "packages/world/src/index.ts",
+    "packages/world/src/internal.ts",
+    "packages/world/src/nether/index.ts",
+    "packages/world/src/nether/terrain.ts"
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "866767340879493d",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "TSC_ALL=0"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "866767340879493d",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "Scope: 9 of 10 workspace projects, every project Done, LINT_ALL=0"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "866767340879493d",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets-gen: 73 textures, 19 sounds, atlas.png 22345 bytes; vite build 154 modules in 277ms; BUILD=0"
+    },
+    {
+      "name": "test:world",
+      "command": "pnpm --filter @voxelcraft/world test",
+      "job_id": "318b365cca8442ff",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "Test Files 7 passed (7), Tests 93 passed (93)"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": null,
+      "state": "pending",
+      "exit_code": null,
+      "eof": false,
+      "log": "deferred until the four L2 branches are merged and the runner is quiet, so the timing assertions are not measured under five way contention"
+    }
+  ],
+  "contract_changes_needed": [],
+  "performance": {
+    "item": "H-06",
+    "budget_ms": 4,
+    "bench_max_ms": 6,
+    "overworld_before_ms": 10.836,
+    "overworld_after_ms": null,
+    "nether_ms": 5.354,
+    "baseline_job_id": "2bbc54e605f148a3",
+    "note": "Baseline 10.836 ms per chunk over 24 chunks on a quiet runner (world-a). The overworld reduction is owned by the L2 perf child and is not merged yet. The nether generator already lands under the 6 ms bench maximum."
+  },
+  "children": [
+    {
+      "name": "L2-a nether decoration",
+      "branch": "feat/mc-20260916/v2-world-nether-deco",
+      "owns": "packages/world/src/nether/decoration.ts and its tests",
+      "state": "running"
+    },
+    {
+      "name": "L2-b villages",
+      "branch": "feat/mc-20260916/v2-world-village",
+      "owns": "packages/world/src/village/** and its tests",
+      "state": "running"
+    },
+    {
+      "name": "L2-c portal linking",
+      "branch": "feat/mc-20260916/v2-world-portal",
+      "owns": "packages/world/src/portal/** and its tests",
+      "state": "running"
+    },
+    {
+      "name": "L2-d performance H-06",
+      "branch": "feat/mc-20260916/v2-world-perf",
+      "owns": "overworld terrain and noise hot paths",
+      "state": "running"
+    }
+  ],
+  "notes": "Interim report, rewritten at the end of the run.\n\nDimension seam: createWorldGenerator(seed, dimension = DIMENSION.Overworld) dispatches to the untouched v1 body (createOverworldGenerator) or to createNetherGenerator, so every existing overworld caller keeps its behaviour and its golden hashes.\n\nNether terrain: netherrack bulk, lava sea at NETHER_GEN.lavaSeaLevel 31, four bedrock layers at the floor and under the roof with the outermost layer solid, and 3D noise caves against the frozen caveThreshold 0.42. The frozen threshold is untouched; a non frozen NETHER_NOISE.amplitude scales the normalised fbm3 output into the range where 0.42 is meaningful, because a three octave normalised fbm3 has a standard deviation near 0.13 and would otherwise never carve anything.\n\nGoldens: the nether fixture lives in new top level keys (netherGenVersion, netherGenerator, netherEntries) instead of in entries, because world-a.terrain.test.ts regenerates every element of entries through the overworld generator. A regeneration is therefore additive: the last run produced 46 insertions and zero deletions, so the seven overworld hashes are byte identical.\n\nOpen items: merge the four L2 branches, wire decoration, villages and portals into the generators, regenerate the nether goldens once decoration lands, then re run every gate on a quiet runner."
+}
