@@ -1,7 +1,7 @@
 {
   "version": 1,
-  "task": "wire-a",
-  "generatedAt": "2026-09-16T02:57:13.917Z",
+  "task": "fix-c",
+  "generatedAt": "2026-09-16T08:41:10.823Z",
   "contractVersion": "1.1.0",
   "failFactor": 3,
   "meta": {
@@ -44,20 +44,20 @@
       "ticks": 600
     },
     "totals": {
-      "chunkGenMs": 563.23,
-      "terrainMs": 524.555,
-      "decorateMs": 38.676,
-      "lightSeedAndStitchMs": 8169.878,
-      "meshMs": 94.702,
-      "simTickMs": 605.786
+      "chunkGenMs": 609.514,
+      "terrainMs": 564.84,
+      "decorateMs": 44.674,
+      "lightSeedAndStitchMs": 1054.619,
+      "meshMs": 115.754,
+      "simTickMs": 712.884
     },
-    "notes": "chunkGenAvgMs covers real terrain generation plus decoration per chunk; the skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs, and the light engine is also exercised inside simTickAvgMs."
+    "notes": "chunkGenAvgMs covers real terrain generation plus decoration per chunk; the skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs and gated as lightSeedAvgMs, that same total over the columns the light loop seeds, held to the frozen per column generation budget because the contract freezes no light budget of its own; the light engine is also exercised inside simTickAvgMs."
   },
   "metrics": [
     {
       "name": "chunkGenAvgMs",
       "unit": "ms",
-      "value": 1.949,
+      "value": 2.109,
       "threshold": 6,
       "failThreshold": 18,
       "status": "ok"
@@ -65,7 +65,7 @@
     {
       "name": "chunkMeshAvgMs",
       "unit": "ms",
-      "value": 2.959,
+      "value": 3.617,
       "threshold": 12,
       "failThreshold": 36,
       "status": "ok"
@@ -73,9 +73,17 @@
     {
       "name": "simTickAvgMs",
       "unit": "ms",
-      "value": 1.01,
+      "value": 1.188,
       "threshold": 8,
       "failThreshold": 24,
+      "status": "ok"
+    },
+    {
+      "name": "lightSeedAvgMs",
+      "unit": "ms",
+      "value": 4.687,
+      "threshold": 6,
+      "failThreshold": 18,
       "status": "ok"
     }
   ],
@@ -83,7 +91,7 @@
     {
       "name": "sectionMeshAvgMs",
       "unit": "ms",
-      "value": 0.592,
+      "value": 0.723,
       "budget": 1.5
     }
   ],

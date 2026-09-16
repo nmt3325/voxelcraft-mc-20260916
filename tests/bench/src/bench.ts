@@ -322,11 +322,18 @@ async function main(): Promise<void> {
 	const chunkMeshAvgMs = meshing.totalMs / Math.max(1, meshing.chunkCount)
 	const sectionMeshAvgMs = meshing.totalMs / Math.max(1, meshing.sectionCount)
 	const simTickAvgMs = tick.totalMs / Math.max(1, tick.ticks)
+	// The skylight seed and boundary stitch, per column the light loop seeds.
+	// It used to be reported as a bare total with no threshold, so a regression
+	// in light seeding could never fail the bench. The contract freezes no light
+	// budget of its own, so this is held to the per column generation budget:
+	// seeding a column is part of making one.
+	const lightSeedAvgMs = generation.lightMs / Math.max(1, generation.decorated)
 
 	const metrics: Metric[] = [
 		makeMetric('chunkGenAvgMs', chunkGenAvgMs, BENCH.chunkGenAvgMsMax),
 		makeMetric('chunkMeshAvgMs', chunkMeshAvgMs, BENCH.chunkMeshAvgMsMax),
 		makeMetric('simTickAvgMs', simTickAvgMs, BENCH.simTickAvgMsMax),
+		makeMetric('lightSeedAvgMs', lightSeedAvgMs, BENCH.chunkGenAvgMsMax),
 	]
 
 	const warnings = metrics
@@ -352,7 +359,7 @@ async function main(): Promise<void> {
 
 	const report = {
 		version: 1,
-		task: 'wire-a',
+		task: 'fix-c',
 		generatedAt: new Date().toISOString(),
 		contractVersion: CONTRACT_VERSION,
 		failFactor: BENCH.failFactor,
@@ -397,8 +404,11 @@ async function main(): Promise<void> {
 			},
 			notes:
 				'chunkGenAvgMs covers real terrain generation plus decoration per chunk; the ' +
-				'skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs, ' +
-				'and the light engine is also exercised inside simTickAvgMs.',
+				'skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs ' +
+				'and gated as lightSeedAvgMs, that same total over the columns the light loop ' +
+				'seeds, held to the frozen per column generation budget because the contract ' +
+				'freezes no light budget of its own; the light engine is also exercised inside ' +
+				'simTickAvgMs.',
 		},
 		metrics,
 		informational: [

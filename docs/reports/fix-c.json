@@ -1,0 +1,111 @@
+{
+  "task": "fix-c",
+  "branch": "feat/mc-20260916/fix-c",
+  "status": "done",
+  "base_sha": "687ff6b",
+  "head_sha": "121834b6c987a718c55819b294d62490ce2d57af",
+  "commits": [
+    { "sha": "fc028aef4b50a8ffce8bf7b620a2ae5681317478", "subject": "fix(server): add an inbound rate limit and a per-tick work budget (M-2)" },
+    { "sha": "baebe6611f83f529b1d553f1fe7d93ffe3c35f19", "subject": "fix(server): budget accepted movement per server tick (B-1)" },
+    { "sha": "d3fb3c330456e16621b03e6936f0e751eaffb239", "subject": "fix(server): check reach and stream radius before any world read, bound the column cache (B-2, M-3)" },
+    { "sha": "6f4d7406370873fb99825e9c3a72232b349380e0", "subject": "fix(server): forget columns that leave the stream radius so they can be resent (M-4)" },
+    { "sha": "8d7a60855ee52451d7c91480641419b098e1eb2e", "subject": "fix(server): validate the frame version and enforce the input, edit and encode budgets on the wire (B-1, B-2, M-1, M-2)" },
+    { "sha": "121834b6c987a718c55819b294d62490ce2d57af", "subject": "fix(bench): gate light seeding as lightSeedAvgMs and refresh the committed baseline (M-5)" }
+  ],
+  "files_changed": [
+    "apps/server/src/__tests__/abuse.test.ts",
+    "apps/server/src/gameServer.ts",
+    "apps/server/src/index.ts",
+    "apps/server/src/inputGate.test.ts",
+    "apps/server/src/inputGate.ts",
+    "apps/server/src/movement.test.ts",
+    "apps/server/src/movement.ts",
+    "apps/server/src/rateLimit.test.ts",
+    "apps/server/src/rateLimit.ts",
+    "apps/server/src/stream/chunkStream.test.ts",
+    "apps/server/src/stream/chunkStream.ts",
+    "apps/server/src/types.ts",
+    "apps/server/src/world/validate.ts",
+    "apps/server/src/world/worldStore.test.ts",
+    "apps/server/src/world/worldStore.ts",
+    "tests/bench/results/bench.json",
+    "tests/bench/src/bench.ts",
+    "docs/reports/fix-c.json"
+  ],
+  "checks": [
+    {
+      "name": "install",
+      "command": "pnpm install --no-frozen-lockfile",
+      "job_id": "07bb5110c657429c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "Scope: all 12 workspace projects; lockfile is up to date, resolution step skipped; already up to date; pnpm-lock.yaml unchanged and no dependencies added"
+    },
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "53aea1bf12984b50",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "no diagnostics in any workspace project"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "2bdf32eed9814d67",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "eslint clean across 11 projects including apps/server and tests/bench"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "6f2a3122963e49c9",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "apps/server 106 passed in 10 files including the 5 new abuse regressions; packages/client 140 passed; apps/game 9 passed; all other projects pass"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "f0fa24caa7eb4754",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets-gen 119 textures and 24 sounds, vite build 202 modules, dist/assets/index-BdEiw_Tz.js 721.51 kB"
+    },
+    {
+      "name": "size",
+      "command": "pnpm size",
+      "job_id": "aa628abc99d445ef",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "TOTAL raw=996532 gzip=437851"
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm test:e2e",
+      "job_id": "85a7b96c147e41fc",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "playwright 10 passed in 19.5s (boot, particles, persistence, worker meshing)"
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "8fc3ff02384549f8",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "chunkGenAvgMs 2.109, chunkMeshAvgMs 3.617, simTickAvgMs 1.188, lightSeedAvgMs 4.687 (all ok, no failures); this run wrote the committed tests/bench/results/bench.json baseline with task fix-c"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "B-1: apps/server/src/inputGate.ts adds InputGate. onInput now admits at most INPUT_GATE.perTick (1) input per server tick per client, with NET.inputBufferTicks (3) ticks of slack for late or reordered frames, drops replays (input.tick at or below the last accepted tick outside the slack window), and makes every input accepted inside one tick share a single cumulative horizontal displacement budget of PHYSICS.walkSpeed / NET.tickHz = 0.21585 blocks, or PHYSICS.sprintSpeed / NET.tickHz = 0.2806 when INPUT_BIT.Sprint is set. Any number of inputs on one tick can therefore move a player no further than one tick of walking, so the 25x bypass is gone and it no longer scales with packet rate. A client that keeps spamming past INPUT_GATE.floodRejects (NET.tickHz rejects inside one tick) is kicked with NET_KICK_REASON.BadMessage. Regressions: apps/server/src/inputGate.test.ts at the unit level and apps/server/src/__tests__/abuse.test.ts at the wire level, where 'caps travel at one tick of walking however many inputs arrive' spams 5 inputs per tick over 24 ticks and asserts the travel stays inside the walk budget, and 'kicks a client that floods a single tick with inputs' sends 200 inputs on one tick and expects a bad_message kick.\nB-2: validateBlockEdit now validates y bounds, reach (VALIDATION.reachBlocks = PHYSICS.reach + 0.5 measured from the eye position) and stream radius membership (NET.streamRadius) BEFORE any world read, and reports the new 'out_of_stream' rejection; the rejected path no longer reads a block back, so it can no longer generate or cache a column. ServerWorld keeps a bounded LRU of at most WORLD_CACHE.maxColumns (338 = two stream windows of 169) columns, pins columns that carry player edits so they are never evicted, and exposes hasColumn so callers can probe residency without generating. Regressions: apps/server/src/world/worldStore.test.ts covers eviction and the edited pin, and abuse.test.ts 'does not let out of reach edits grow the world' sends 300 out of reach edits with the edit budget lifted and asserts the loaded column count does not grow.\nM-1: every inbound frame is now validated. gameServer checks the header version with assertCompatibleProtocol and the opcode with assertClientOpcode from packages/net/src/protocol.ts, kicks NET_KICK_REASON.ProtocolMismatch for a foreign protocol version and NET_KICK_REASON.BadMessage for an unexpected opcode, an oversized frame or a malformed payload. abuse.test.ts 'kicks a frame that claims another protocol version' flips the version byte and expects protocol_mismatch, so assertCompatibleProtocol now has a production caller and a wire level test.\nM-2: apps/server/src/rateLimit.ts adds per client token bucket inbound limits (frames per second, bytes per second and a tighter bucket for edit and chat opcodes, all derived from NET.tickHz, NET.chunksPerSecondPerClient and NET.maxMessageBytes) and a per tick work budget WORK with 10 chunk encodes and 4 accepted edits per client per tick. Exhausting a bucket kicks with NET_KICK_REASON.BadMessage; exceeding the per tick work budget defers the remaining work to the next tick instead of dropping it, so chunk streaming stays smooth. Regressions: apps/server/src/rateLimit.test.ts, the chunkStream work budget test and abuse.test.ts 'kicks a client that floods the socket past the frozen budget'.\nM-3: ChunkColumn.revision and its stale payload guard comment are removed rather than wired up, because nothing in production read it and the streamer already guards staleness by centre and radius. The one probe that abused revision as a residency check now calls hasColumn.\nM-4: the per client sent set in apps/server/src/stream/chunkStream.ts is now a Map from column key to the centre it was sent for, and recenter calls forgetOutOfRange to evict every entry outside NET.streamRadius, so a column that leaves and re-enters the stream radius is streamed again instead of being blocked for the rest of the session.\nM-5: tests/bench/results/bench.json was a stale wire-a baseline (lightSeedAndStitchMs 8169.878); it is regenerated on this branch by the recorded bench gate run (task fix-c, lightSeedAndStitchMs 1054.619). tests/bench/src/bench.ts adds a gated metric lightSeedAvgMs = lightSeedAndStitchMs divided by the columns the light loop seeds (225 decorated columns, 4.687 ms today) and holds it to BENCH.chunkGenAvgMsMax, so 6 ms warns and 18 ms fails through BENCH.failFactor. The frozen contract defines no light specific budget and packages/core-types could not be touched, so the light seed reuses the per column generation budget; a roughly 4x light seeding regression now fails pnpm bench, which was impossible before.\nScope: only apps/server/**, tests/bench/** and docs/reports/fix-c.json were touched. packages/core-types and every other owner's path are unchanged, pnpm-lock.yaml is unchanged, no npm dependencies were added and no contract change was needed, because packages/net already exported assertCompatibleProtocol, assertClientOpcode and kickReasonFor. packages/net itself needed no edit. No child sessions were spawned.\nReporting: all eight Section 5 gates above ran from the repo root at head_sha 121834b6c987a718c55819b294d62490ce2d57af; the branch tip is one extra docs commit that only adds this report."
+}
