@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
-ROOT=/home/runner/work/_temp/gha-mcp/linux-see5rk59/work/vc
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SELF_DIR/../.." && pwd)"
+ROOT="${VC_ROOT:-$(dirname "$REPO_DIR")}"
 cd "$ROOT/repo" || exit 66
 git fetch origin --prune -q
 BR=$(git rev-parse --abbrev-ref HEAD)
