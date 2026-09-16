@@ -39,6 +39,7 @@ step() {
 step install pnpm install --no-frozen-lockfile
 [ $FAIL -eq 0 ] && step tsc pnpm -r exec tsc --noEmit
 [ $FAIL -eq 0 ] && step lint pnpm -r lint
+[ $FAIL -eq 0 ] && step lint_root pnpm lint
 [ $FAIL -eq 0 ] && step test pnpm -r test
 [ $FAIL -eq 0 ] && step build pnpm build
 [ $FAIL -eq 0 ] && step size pnpm size
