@@ -1,15 +1,36 @@
+/**
+ * VoxelCraft browser entry point.
+ *
+ * The app is a thin shell over the real packages:
+ *  - `@voxelcraft/world` generates every chunk (biomes, caves, ores, features)
+ *  - `@voxelcraft/sim` owns the fixed 20 Hz tick: fluids, light, physics and the
+ *    voxel raycast the crosshair uses
+ *  - `@voxelcraft/gameplay` owns blocks, items, crafting, the inventory and the
+ *    IndexedDB save
+ *  - `@voxelcraft/client` owns meshing workers, rendering, audio and the UI
+ *
+ * What is left in this file is input, streaming policy, and the `window.__vc`
+ * automation hooks the E2E suite drives.
+ */
 import {
 	BLOCK,
-	CHUNK_Y,
-	EVENT,
+	CHUNK_X,
+	CHUNK_Z,
+	GAME_MODE,
 	PERF,
+	PHYSICS,
+	SECTIONS_PER_CHUNK,
 	SECTION_Y,
+	chunkKey,
 	sectionKey,
+	worldToChunk,
+	type BlockId,
 	type GameSettings,
+	type RayHit,
+	type VoxelView,
 } from '@voxelcraft/core-types'
 import {
 	VoxelRenderer,
-	appearanceOf,
 	createAudio,
 	createMesherPool,
 	createUi,
@@ -23,40 +44,48 @@ import {
 	type UiSettings,
 	type UiWorldEntry,
 } from '@voxelcraft/client'
+import {
+	BLOCKS,
+	addStack,
+	craftFromInventory,
+	heldStack,
+	isCreative,
+	makeStack,
+	removeItem,
+	selectHotbar,
+	swapCursorWithSlot,
+} from '@voxelcraft/gameplay'
+import { aabbOverlaps, isReplaceableBlock, raycastVoxels, voxelBox } from '@voxelcraft/sim'
 import { loadGameAssets, type GameAssets } from './assets'
-import { raycastVoxels, type RaycastHit, type Vec3 } from './raycast'
-import { HOTBAR, buildSnapshot, hotbarBlockId } from './ui-bridge'
-import { LocalWorld } from './world/localWorld'
-import { DEFAULT_SETTINGS, createWorldStore, type WorldRecord } from './world/store'
-
-/**
- * Game entry point: world -> mesher pool -> renderer, plus input, UI, audio and
- * saving.
- *
- * The UI and audio layers live in `@voxelcraft/client` (UI/QA subtree); this
- * file owns the game state and adapts it into their contracts, and exposes the
- * `window.__vc` automation hooks the E2E suite drives.
- */
+import { PlayerRuntime } from './player'
+import { buildSnapshot, createCreativeInventory, heldBlockId } from './ui-bridge'
+import { ChunkWorld } from './world/chunkWorld'
+import { createSaveMeta, openWorldPersistence } from './world/store'
 
 const DEFAULT_SEED = 20260916
-const PLAYER_HALF = 0.3
-const PLAYER_HEIGHT = 1.8
-const PLAYER_EYE = 1.62
-const REACH = 5.5
-const GRAVITY = 26
-const JUMP_SPEED = 8.6
-const WALK_SPEED = 4.6
-const SPRINT_SPEED = 7.2
 const DAY_LENGTH_SECONDS = 600
 const AUTOSAVE_SECONDS = 15
 const UI_INTERVAL_SECONDS = 0.1
-const SECTIONS_PER_COLUMN = CHUNK_Y / SECTION_Y
+const SECTION_SYNC_SECONDS = 0.25
+/** Vertical band of sections kept around the camera. */
 const VERTICAL_BAND = 3
 const REQUESTS_PER_FRAME = 3
+const TERRAIN_PER_FRAME = 2
+const DECORATE_PER_FRAME = 1
+/** Saved chunks restored before the first frame; beyond that only nearby ones. */
+const PRELOAD_LIMIT = 256
+const MAX_FRAME_SECONDS = 0.05
 
-/** Mirrors `VcState` in tests/e2e/src/harness.ts. */
+/** Fluids are meshed but never targeted by the crosshair. */
+const FLUID_BLOCKS: readonly BlockId[] = [
+	BLOCK.WATER,
+	BLOCK.LAVA,
+	BLOCK.WATER_FLOWING,
+	BLOCK.LAVA_FLOWING,
+]
+
 interface VcState {
-	screen: string
+	screen: UiScreen
 	seed: number
 	worldId: string
 	x: number
@@ -70,7 +99,6 @@ interface VcState {
 	renderDistance: number
 }
 
-/** Mirrors `VcTestApi` in tests/e2e/src/harness.ts. */
 interface VcTestApi {
 	ready: Promise<void>
 	state(): VcState
@@ -88,66 +116,132 @@ declare global {
 	}
 }
 
-function queryParams(): URLSearchParams {
-	return new URLSearchParams(window.location.search)
-}
-
-function numberParam(params: URLSearchParams, name: string): number | null {
-	const raw = params.get(name)
+function numberParam(params: URLSearchParams, key: string): number | null {
+	const raw = params.get(key)
 	if (raw === null) return null
 	const value = Number(raw)
 	return Number.isFinite(value) ? value : null
 }
 
-/** Blocks that stop movement: full cubes that are not fluids. */
-function blocksMovement(id: number): boolean {
-	if (id === BLOCK.AIR) return false
-	if (id === BLOCK.WATER || id === BLOCK.WATER_FLOWING) return false
-	if (id === BLOCK.LAVA || id === BLOCK.LAVA_FLOWING) return false
-	const appearance = appearanceOf(id)
-	return appearance !== null && appearance.fullCube
+function clampDistance(value: number): number {
+	return Math.max(PERF.renderDistanceMin, Math.min(PERF.renderDistanceMax, Math.round(value)))
 }
 
-/** Blocks the crosshair can target. */
-function targetable(id: number): boolean {
-	if (id === BLOCK.AIR) return false
-	if (id === BLOCK.WATER || id === BLOCK.WATER_FLOWING) return false
-	return appearanceOf(id) !== null
+function worldIdFromName(name: string): string {
+	const slug = name
+		.trim()
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+	return slug === '' ? `world-${Date.now()}` : slug
 }
 
-function main(assets: GameAssets): void {
-	const params = queryParams()
+/** Blocks that use the wooden dig sound. */
+const WOOD_BLOCKS: readonly BlockId[] = [
+	BLOCK.OAK_LOG,
+	BLOCK.OAK_LEAVES,
+	BLOCK.OAK_SAPLING,
+	BLOCK.PLANKS,
+	BLOCK.CRAFTING_TABLE,
+	BLOCK.CHEST,
+	BLOCK.LADDER,
+]
+
+async function boot(assets: GameAssets): Promise<void> {
+	const params = new URLSearchParams(window.location.search)
 	const testMode = params.get('test') === '1'
 	const errors: string[] = []
 
 	const canvas = document.getElementById('game-canvas')
-	if (!(canvas instanceof HTMLCanvasElement)) {
-		throw new Error('#game-canvas is missing')
-	}
+	if (!(canvas instanceof HTMLCanvasElement)) throw new Error('#game-canvas is missing')
+	const uiRoot = document.getElementById('ui-root')
 
-	// --- world and settings -------------------------------------------------
-
-	const store = createWorldStore()
 	const requestedSeed = numberParam(params, 'seed')
 	const worldId =
-		params.get('world') ?? (testMode && requestedSeed !== null ? `e2e-${requestedSeed}` : 'default')
-	const saved = store.load(worldId)
-	const seed = requestedSeed ?? saved?.seed ?? DEFAULT_SEED
-	const world = new LocalWorld(seed)
-	if (saved !== null) world.applyEdits(saved.edits)
+		params.get('world') ?? (testMode ? `e2e-${(requestedSeed ?? DEFAULT_SEED) >>> 0}` : 'default')
 
-	const settings: GameSettings = {
-		...DEFAULT_SETTINGS,
-		...(saved?.settings ?? {}),
-		renderDistance:
-			numberParam(params, 'rd') ??
-			(testMode
-				? PERF.e2eRenderDistance
-				: (saved?.settings.renderDistance ?? DEFAULT_SETTINGS.renderDistance)),
-	}
+	// --- persistence --------------------------------------------------------
+
+	const persistence = await openWorldPersistence({ worldId })
+	const meta = await persistence.loadMeta()
+	const savedPlayer = await persistence.loadPlayer()
+	const storedSettings = await persistence.loadSettings()
+	const seed = (requestedSeed ?? meta?.seed ?? DEFAULT_SEED) >>> 0
+
+	const settings: GameSettings = { ...storedSettings }
+	const requestedDistance = numberParam(params, 'rd')
+	if (requestedDistance !== null) settings.renderDistance = clampDistance(requestedDistance)
+	else if (testMode) settings.renderDistance = PERF.e2eRenderDistance
 
 	const width = numberParam(params, 'w') ?? (testMode ? PERF.e2eCanvasWidth : window.innerWidth)
 	const height = numberParam(params, 'h') ?? (testMode ? PERF.e2eCanvasHeight : window.innerHeight)
+	if (testMode) {
+		canvas.style.width = `${width}px`
+		canvas.style.height = `${height}px`
+	}
+
+	// --- world --------------------------------------------------------------
+
+	const savedKeys = new Set<string>()
+	for (const pos of await persistence.chunkKeys()) savedKeys.add(chunkKey(pos.cx, pos.cz))
+
+	const world = new ChunkWorld({
+		seed,
+		source: {
+			has: (cx: number, cz: number) => savedKeys.has(chunkKey(cx, cz)),
+			load: (cx: number, cz: number) => persistence.loadChunk(cx, cz),
+		},
+	})
+
+	const spawnCx = worldToChunk(Math.floor(savedPlayer?.position.x ?? CHUNK_X / 2))
+	const spawnCz = worldToChunk(Math.floor(savedPlayer?.position.z ?? CHUNK_Z / 2))
+
+	// Saved chunks are authoritative, so they are restored before anything is
+	// generated: a reload must never regenerate over a player edit.
+	const restoreEverything = savedKeys.size <= PRELOAD_LIMIT
+	const restores: Promise<boolean>[] = []
+	for (const key of savedKeys) {
+		const parts = key.split(',')
+		const cx = Number(parts[0])
+		const cz = Number(parts[1])
+		if (!Number.isFinite(cx) || !Number.isFinite(cz)) continue
+		const near =
+			Math.max(Math.abs(cx - spawnCx), Math.abs(cz - spawnCz)) <= settings.renderDistance + 2
+		if (!restoreEverything && !near) continue
+		restores.push(world.restoreFromStore(cx, cz))
+	}
+	if (restores.length > 0) {
+		await Promise.all(restores)
+		world.stitchLight()
+	}
+
+	world.ensureDecorated(spawnCx, spawnCz)
+	const spawn =
+		savedPlayer?.position ??
+		world.findSpawn(spawnCx * CHUNK_X + CHUNK_X / 2, spawnCz * CHUNK_Z + CHUNK_Z / 2)
+
+	const gameMode = savedPlayer?.gameMode ?? meta?.gameMode ?? GAME_MODE.Creative
+
+	const player = new PlayerRuntime({
+		world,
+		spawn: {
+			x: spawn.x,
+			y: spawn.y,
+			z: spawn.z,
+			yaw: savedPlayer?.yaw ?? 0,
+			pitch: savedPlayer?.pitch ?? 0,
+		},
+		inventory: savedPlayer?.inventory ?? createCreativeInventory(),
+		gameMode,
+		health: savedPlayer?.health,
+		tick: savedPlayer?.tick,
+		respawn: savedPlayer?.respawn ?? null,
+		// Under test the player stands still, so the screenshot and the saved
+		// position survive a reload unchanged. Fluids and light still tick.
+		simulatePlayer: !testMode,
+	})
+
+	// --- client -------------------------------------------------------------
 
 	const renderer = new VoxelRenderer({
 		canvas,
@@ -168,79 +262,108 @@ function main(assets: GameAssets): void {
 		volume: settings.volume,
 	})
 
-	const spawnX = 8
-	const spawnZ = 8
-	const player = {
-		x: saved?.player.x ?? spawnX + 0.5,
-		y: saved?.player.y ?? world.spawnHeight(spawnX, spawnZ),
-		z: saved?.player.z ?? spawnZ + 0.5,
-		yaw: saved?.player.yaw ?? 0,
-		pitch: saved?.player.pitch ?? -0.2,
-		vy: 0,
-		onGround: false,
-		health: saved?.player.health ?? 20,
-		hunger: saved?.player.hunger ?? 20,
-		hotbar: saved?.player.hotbar ?? 0,
-	}
-
-	const requested = new Map<string, number>()
-	const keys = new Set<string>()
+	let screen: UiScreen = 'playing'
 	let needsSectionSync = true
-	let ready = false
-	let tick = 0
-	let screen: UiScreen = testMode ? 'playing' : 'title'
-	let resolveReady = (): void => {}
-	const whenReady = new Promise<void>((resolve) => {
-		resolveReady = resolve
-	})
 
-	const listWorlds = (): UiWorldEntry[] =>
-		store
-			.list()
-			.map((record) => ({
-				worldId: record.name,
-				name: record.name,
-				seed: record.seed,
-				lastPlayedAt: record.updatedAt,
-			}))
-			.sort((a, b) => b.lastPlayedAt - a.lastPlayedAt)
-	let worlds: readonly UiWorldEntry[] = listWorlds()
-
-	const notify = (name: string, detail: Record<string, unknown>): void => {
-		window.dispatchEvent(new CustomEvent(name, { detail }))
+	/** Raycast view where plants and torches are pickable but fluids are not. */
+	const targetView: VoxelView = {
+		...world.voxels,
+		isSolid: (x: number, y: number, z: number): boolean => {
+			const id = world.blockAt(x, y, z)
+			return id !== BLOCK.AIR && !FLUID_BLOCKS.includes(id)
+		},
 	}
 
-	/** The UI uses dotted sound names; the generated manifest uses underscores. */
 	const playSound = (name: string): void => {
-		const sound = name.replace(/\./g, '_')
-		audio.play(sound)
-		notify(EVENT.SoundPlay, { sound })
+		audio.play(name)
+	}
+
+	// --- editing ------------------------------------------------------------
+
+	const breakAt = (x: number, y: number, z: number): boolean => {
+		const bx = Math.floor(x)
+		const by = Math.floor(y)
+		const bz = Math.floor(z)
+		const previous = world.blockAt(bx, by, bz)
+		if (previous === BLOCK.AIR) return false
+		const definition = BLOCKS.tryById(previous)
+		// A negative hardness is the contract's "unbreakable", such as bedrock.
+		if (definition === undefined || definition.hardness < 0) return false
+		if (!world.setBlock(bx, by, bz, BLOCK.AIR)) return false
+		if (!isCreative(gameMode)) {
+			const itemId = definition.itemId ?? null
+			if (itemId !== null) addStack(player.inventory, makeStack(itemId, 1))
+		}
+		needsSectionSync = true
+		playSound(WOOD_BLOCKS.includes(previous) ? 'dig_wood' : 'dig_stone')
+		return true
+	}
+
+	const placeAt = (x: number, y: number, z: number, id: BlockId): boolean => {
+		if (id === BLOCK.AIR) return false
+		const definition = BLOCKS.tryById(id)
+		if (definition === undefined) return false
+		const bx = Math.floor(x)
+		const by = Math.floor(y)
+		const bz = Math.floor(z)
+		const current = world.blockAt(bx, by, bz)
+		if (current !== BLOCK.AIR && !isReplaceableBlock(current)) return false
+		// Never seal the player inside a block. `aabbOverlaps` is strict, so a block
+		// placed against the feet or the head still fits.
+		if (definition.solid && aabbOverlaps(player.box(), voxelBox(bx, by, bz))) return false
+		if (!world.setBlock(bx, by, bz, id)) return false
+		if (!isCreative(gameMode)) {
+			const held = heldStack(player.inventory)
+			if (held !== null) removeItem(player.inventory, held.item, 1)
+		}
+		needsSectionSync = true
+		playSound('place_generic')
+		return true
+	}
+
+	const targeted = (): RayHit | null =>
+		raycastVoxels(player.eye(), player.lookDirection(), PHYSICS.reach, targetView)
+
+	const breakTargeted = (): void => {
+		const hit = targeted()
+		if (hit === null) return
+		breakAt(hit.block.x, hit.block.y, hit.block.z)
+	}
+
+	const placeTargeted = (): void => {
+		const hit = targeted()
+		if (hit === null) return
+		const id = heldBlockId(player.inventory)
+		if (id === null) return
+		placeAt(hit.block.x + hit.normal.x, hit.block.y + hit.normal.y, hit.block.z + hit.normal.z, id)
 	}
 
 	// --- section streaming --------------------------------------------------
 
+	/** Section key -> revision already handed to the mesher pool. */
+	const requested = new Map<string, number>()
+
 	const syncSections = (): void => {
-		const centreX = Math.floor(player.x / SECTION_Y)
-		const centreZ = Math.floor(player.z / SECTION_Y)
-		const centreY = Math.floor(player.y / SECTION_Y)
+		const centerCx = worldToChunk(Math.floor(player.x))
+		const centerCz = worldToChunk(Math.floor(player.z))
+		const centerSy = Math.floor(player.y / SECTION_Y)
 		const distance = renderer.getRenderDistance()
 		const wanted = new Set<string>()
-		const todo: Array<{ cx: number; sy: number; cz: number; cost: number }> = []
+		const todo: { cx: number; cz: number; sy: number; cost: number }[] = []
 
-		for (let cx = centreX - distance; cx <= centreX + distance; cx++) {
-			for (let cz = centreZ - distance; cz <= centreZ + distance; cz++) {
-				for (let sy = centreY - VERTICAL_BAND; sy <= centreY + VERTICAL_BAND; sy++) {
-					if (sy < 0 || sy >= SECTIONS_PER_COLUMN) continue
-					const key = sectionKey(cx, sy, cz)
+		for (let cx = centerCx - distance; cx <= centerCx + distance; cx++) {
+			for (let cz = centerCz - distance; cz <= centerCz + distance; cz++) {
+				if (!world.hasTerrain(cx, cz)) continue
+				for (let sy = centerSy - VERTICAL_BAND; sy <= centerSy + VERTICAL_BAND; sy++) {
+					if (sy < 0 || sy >= SECTIONS_PER_CHUNK) continue
+					const key = sectionKey(cx, cz, sy)
 					wanted.add(key)
-					const revision = world.revisionOf(cx, sy, cz)
-					if (requested.get(key) === revision) continue
-					todo.push({
-						cx,
-						sy,
-						cz,
-						cost: Math.abs(cx - centreX) + Math.abs(cz - centreZ) + Math.abs(sy - centreY) * 2,
-					})
+					if (world.isSectionEmpty(cx, cz, sy)) continue
+					if (requested.get(key) === world.revisionOf(cx, cz, sy)) continue
+					const dx = cx - centerCx
+					const dz = cz - centerCz
+					const dy = sy - centerSy
+					todo.push({ cx, cz, sy, cost: dx * dx + dz * dz + dy * dy })
 				}
 			}
 		}
@@ -252,17 +375,14 @@ function main(assets: GameAssets): void {
 			renderer.removeSection(key)
 		}
 
+		// Nearest first, so the view around the camera fills in before the edges.
 		todo.sort((a, b) => a.cost - b.cost)
 		for (const item of todo.slice(0, REQUESTS_PER_FRAME)) {
-			const request = world.buildMeshRequest(item.cx, item.sy, item.cz)
+			const request = world.buildMeshRequest(item.cx, item.cz, item.sy)
 			requested.set(request.key, request.revision)
 			pool.request(request, (response) => {
 				if (response.type === 'mesh') {
 					renderer.enqueue(response.result)
-					notify(EVENT.ChunkMeshed, {
-						key: response.result.key,
-						quads: response.result.stats.quads,
-					})
 					return
 				}
 				if (response.type === 'error') {
@@ -274,163 +394,64 @@ function main(assets: GameAssets): void {
 		needsSectionSync = todo.length > REQUESTS_PER_FRAME
 	}
 
-	// --- editing ------------------------------------------------------------
+	// --- saving --------------------------------------------------------------
 
-	const intersectsPlayer = (at: Vec3): boolean =>
-		at.x === Math.floor(player.x) &&
-		at.z === Math.floor(player.z) &&
-		(at.y === Math.floor(player.y) || at.y === Math.floor(player.y + PLAYER_HEIGHT - 0.01))
+	let worlds: readonly UiWorldEntry[] = []
 
-	const pick = (): RaycastHit | null => {
-		const cosPitch = Math.cos(player.pitch)
-		const direction: Vec3 = {
-			x: -Math.sin(player.yaw) * cosPitch,
-			y: Math.sin(player.pitch),
-			z: -Math.cos(player.yaw) * cosPitch,
+	const refreshWorlds = async (): Promise<void> => {
+		const list = await persistence.listWorlds()
+		worlds = list.map((entry) => ({
+			worldId: entry.worldId,
+			name: entry.name,
+			seed: entry.seed,
+			lastPlayedAt: entry.lastPlayedAt,
+		}))
+	}
+	await refreshWorlds()
+
+	let saving: Promise<void> | null = null
+
+	/** Single flight: a second call joins the write already in progress. */
+	const saveWorld = (): Promise<void> => {
+		if (saving !== null) return saving
+		const run = async (): Promise<void> => {
+			const chunks = world.savePayloads()
+			await persistence.save({
+				meta: createSaveMeta({
+					worldId,
+					name: meta?.name,
+					seed,
+					createdAt: meta?.createdAt,
+					gameMode,
+					generatorVersion: world.generator.version,
+				}),
+				player: player.save(),
+				settings,
+				chunks,
+			})
+			for (const payload of chunks) savedKeys.add(chunkKey(payload.cx, payload.cz))
+			await refreshWorlds()
 		}
-		const eye: Vec3 = { x: player.x, y: player.y + PLAYER_EYE, z: player.z }
-		return raycastVoxels(eye, direction, REACH, (x, y, z) => targetable(world.blockAt(x, y, z)))
+		const pending = run()
+			.catch((error: unknown) => {
+				errors.push(`save: ${String(error)}`)
+				console.warn('[voxelcraft] save failed:', error)
+			})
+			.finally(() => {
+				saving = null
+			})
+		saving = pending
+		return pending
 	}
 
-	const editAt = (at: Vec3, id: number): boolean => {
-		if (!world.setBlock(at.x, at.y, at.z, id)) return false
-		needsSectionSync = true
-		syncSections()
-		return true
-	}
+	// --- ui ------------------------------------------------------------------
 
-	const breakAt = (x: number, y: number, z: number): boolean => {
-		const at: Vec3 = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) }
-		const previous = world.blockAt(at.x, at.y, at.z)
-		if (previous === BLOCK.AIR || previous === BLOCK.BEDROCK) return false
-		if (!editAt(at, BLOCK.AIR)) return false
-		playSound(previous === BLOCK.OAK_LOG ? 'dig_wood' : 'dig_stone')
-		return true
-	}
-
-	const placeAt = (x: number, y: number, z: number, id: number): boolean => {
-		const at: Vec3 = { x: Math.floor(x), y: Math.floor(y), z: Math.floor(z) }
-		// Never seal the player inside a block.
-		if (blocksMovement(id) && intersectsPlayer(at)) return false
-		if (!editAt(at, id)) return false
-		playSound('place_generic')
-		return true
-	}
-
-	const breakTargeted = (): void => {
-		const hit = pick()
-		if (hit !== null) breakAt(hit.block.x, hit.block.y, hit.block.z)
-	}
-
-	const placeTargeted = (): void => {
-		const hit = pick()
-		if (hit !== null) placeAt(hit.place.x, hit.place.y, hit.place.z, hotbarBlockId(player.hotbar))
-	}
-
-	// --- movement -----------------------------------------------------------
-
-	const collides = (x: number, y: number, z: number): boolean => {
-		const minX = Math.floor(x - PLAYER_HALF)
-		const maxX = Math.floor(x + PLAYER_HALF)
-		const minY = Math.floor(y)
-		const maxY = Math.floor(y + PLAYER_HEIGHT - 0.01)
-		const minZ = Math.floor(z - PLAYER_HALF)
-		const maxZ = Math.floor(z + PLAYER_HALF)
-		for (let bx = minX; bx <= maxX; bx++) {
-			for (let by = minY; by <= maxY; by++) {
-				for (let bz = minZ; bz <= maxZ; bz++) {
-					if (blocksMovement(world.blockAt(bx, by, bz))) return true
-				}
-			}
-		}
-		return false
-	}
-
-	const move = (dt: number): void => {
-		const sprint = keys.has('ShiftLeft') || keys.has('ShiftRight')
-		const speed = (sprint ? SPRINT_SPEED : WALK_SPEED) * dt
-		let forward = 0
-		let strafe = 0
-		if (keys.has('KeyW')) forward += 1
-		if (keys.has('KeyS')) forward -= 1
-		if (keys.has('KeyD')) strafe += 1
-		if (keys.has('KeyA')) strafe -= 1
-
-		const sinYaw = Math.sin(player.yaw)
-		const cosYaw = Math.cos(player.yaw)
-		let dx = (-sinYaw * forward + cosYaw * strafe) * speed
-		let dz = (-cosYaw * forward - sinYaw * strafe) * speed
-		const magnitude = Math.hypot(dx, dz)
-		if (magnitude > speed && magnitude > 0) {
-			dx = (dx / magnitude) * speed
-			dz = (dz / magnitude) * speed
-		}
-
-		if (!collides(player.x + dx, player.y, player.z)) player.x += dx
-		if (!collides(player.x, player.y, player.z + dz)) player.z += dz
-
-		const inWater = world.blockAt(
-			Math.floor(player.x),
-			Math.floor(player.y + 0.5),
-			Math.floor(player.z),
-		)
-		const swimming = inWater === BLOCK.WATER || inWater === BLOCK.WATER_FLOWING
-		player.vy -= GRAVITY * dt * (swimming ? 0.25 : 1)
-		if (keys.has('Space')) {
-			if (player.onGround) player.vy = JUMP_SPEED
-			else if (swimming) player.vy = JUMP_SPEED * 0.45
-		}
-		player.vy = Math.max(-40, Math.min(40, player.vy))
-
-		const dy = player.vy * dt
-		if (!collides(player.x, player.y + dy, player.z)) {
-			player.y += dy
-			player.onGround = false
-		} else {
-			player.onGround = player.vy < 0
-			player.vy = 0
-		}
-		if (player.y < -8) {
-			player.y = world.spawnHeight(Math.floor(player.x), Math.floor(player.z))
-			player.vy = 0
-		}
-	}
-
-	// --- persistence --------------------------------------------------------
-
-	const saveWorld = (): void => {
-		const now = Date.now()
-		const record: WorldRecord = {
-			name: worldId,
-			seed,
-			createdAt: saved?.createdAt ?? now,
-			updatedAt: now,
-			player: {
-				x: player.x,
-				y: player.y,
-				z: player.z,
-				yaw: player.yaw,
-				pitch: player.pitch,
-				health: player.health,
-				hunger: player.hunger,
-				hotbar: player.hotbar,
-			},
-			edits: world.listEdits(),
-			settings,
-		}
-		store.save(record)
-		worlds = listWorlds()
-	}
-
-	/** World switching reloads the page so every subsystem restarts cleanly. */
-	const gotoWorld = (name: string, worldSeed: number): void => {
+	const gotoWorld = (id: string, worldSeed: number): void => {
 		const next = new URLSearchParams(window.location.search)
-		next.set('world', name)
-		next.set('seed', String(worldSeed))
-		window.location.search = next.toString()
+		next.set('world', id)
+		next.set('seed', String(worldSeed >>> 0))
+		window.location.search = `?${next.toString()}`
 	}
-
-	// --- UI -----------------------------------------------------------------
 
 	const applySetting = (key: keyof UiSettings, value: number | boolean): void => {
 		if (key === 'showDebug') {
@@ -439,10 +460,7 @@ function main(assets: GameAssets): void {
 		}
 		if (typeof value !== 'number' || !Number.isFinite(value)) return
 		if (key === 'renderDistance') {
-			settings.renderDistance = Math.max(
-				PERF.renderDistanceMin,
-				Math.min(PERF.renderDistanceMax, Math.round(value)),
-			)
+			settings.renderDistance = clampDistance(value)
 			renderer.setRenderDistance(settings.renderDistance)
 			needsSectionSync = true
 			return
@@ -462,26 +480,13 @@ function main(assets: GameAssets): void {
 
 	const host: UiHost = {
 		onSelectHotbar(index: number): void {
-			if (index >= 0 && index < HOTBAR.length) player.hotbar = index
+			selectHotbar(player.inventory, index)
 		},
 		onToggleInventory(): void {
 			screen = screen === 'inventory' ? 'playing' : 'inventory'
 		},
 		onCloseScreen(): void {
-			if (screen === 'title') {
-				worlds = listWorlds()
-				screen = 'worldSelect'
-				return
-			}
-			if (screen === 'worldSelect') {
-				screen = 'title'
-				return
-			}
-			if (screen === 'settings') {
-				screen = 'pause'
-				return
-			}
-			screen = screen === 'playing' ? 'pause' : 'playing'
+			screen = 'playing'
 		},
 		onResume(): void {
 			screen = 'playing'
@@ -492,36 +497,53 @@ function main(assets: GameAssets): void {
 		onChangeSetting(key: keyof UiSettings, value: number | boolean): void {
 			applySetting(key, value)
 		},
-		onCreateWorld(name: string, worldSeed: number): void {
-			gotoWorld(name, worldSeed)
+		onCreateWorld(name: string, newSeed: number): void {
+			const go = async (): Promise<void> => {
+				await saveWorld()
+				gotoWorld(worldIdFromName(name), newSeed)
+			}
+			void go().catch((error: unknown) => {
+				console.warn('[voxelcraft] world create failed:', error)
+			})
 		},
 		onSelectWorld(id: string): void {
-			const record = store.load(id)
-			gotoWorld(id, record?.seed ?? seed)
+			const go = async (): Promise<void> => {
+				await saveWorld()
+				const target = await persistence.loadMeta(id)
+				gotoWorld(id, target?.seed ?? seed)
+			}
+			void go().catch((error: unknown) => {
+				console.warn('[voxelcraft] world switch failed:', error)
+			})
 		},
 		onDeleteWorld(id: string): void {
-			store.remove(id)
-			worlds = listWorlds()
+			void persistence
+				.deleteWorld(id)
+				.then(refreshWorlds)
+				.catch((error: unknown) => {
+					console.warn('[voxelcraft] world delete failed:', error)
+				})
 		},
 		onSave(): void {
-			saveWorld()
+			void saveWorld()
 		},
 		onQuit(): void {
-			saveWorld()
+			void saveWorld()
 			screen = 'title'
 		},
 		onCraft(): void {
-			// Crafting recipes live in the gameplay subtree; nothing to apply yet.
+			if (craftFromInventory(player.inventory) !== null) playSound('place_generic')
 		},
-		onMoveStack(): void {
-			// The hotbar is fixed in this build, so stacks cannot move.
+		onMoveStack(from: number, to: number): void {
+			// Pick the stack up, then put it down: the cursor is the UI's clipboard.
+			swapCursorWithSlot(player.inventory, from)
+			swapCursorWithSlot(player.inventory, to)
 		},
 		onPlaySound(name: string): void {
 			playSound(name)
 		},
 	}
 
-	const uiRoot = document.getElementById('ui-root')
 	const ui: UiHandle | null = uiRoot === null ? null : createUi(uiRoot, host)
 
 	const pushUi = (): void => {
@@ -534,19 +556,21 @@ function main(assets: GameAssets): void {
 			z: player.z,
 			yaw: player.yaw,
 			pitch: player.pitch,
-			biome: world.biomeAt(Math.floor(player.x), Math.floor(player.z)),
-			chunks: stats.sections,
+			biome: world.biomeNameAt(Math.floor(player.x), Math.floor(player.z)),
+			chunks: world.loadedChunks,
 			drawCalls: stats.drawCalls,
 			quads: stats.quads,
-			triangles: stats.triangles,
+			// Every quad the greedy mesher emits is two triangles.
+			triangles: stats.quads * 2,
 			renderDistance: renderer.getRenderDistance(),
 		}
 		ui.update(
 			buildSnapshot({
 				screen,
 				health: player.health,
-				hunger: player.hunger,
-				selectedSlot: player.hotbar,
+				maxHealth: player.maxHealth,
+				hunger: 20,
+				inventory: player.inventory,
 				debug,
 				settings,
 				worlds,
@@ -554,35 +578,54 @@ function main(assets: GameAssets): void {
 		)
 	}
 
-	// --- input --------------------------------------------------------------
-	// Hotbar digits, Escape, E and F3 are handled by the UI layer, which reports
-	// them through `host`; duplicating them here would cancel each toggle out.
+	// --- input ---------------------------------------------------------------
 
-	canvas.addEventListener('click', () => {
+	const pressed = new Set<string>()
+	const PITCH_LIMIT = Math.PI / 2 - 0.001
+
+	const readMove = (): void => {
+		if (screen !== 'playing') {
+			player.clearMove()
+			return
+		}
+		player.setMove({
+			forward: (pressed.has('KeyW') ? 1 : 0) - (pressed.has('KeyS') ? 1 : 0),
+			strafe: (pressed.has('KeyD') ? 1 : 0) - (pressed.has('KeyA') ? 1 : 0),
+			jump: pressed.has('Space'),
+			sprint: pressed.has('ShiftLeft') || pressed.has('ShiftRight'),
+			sneak: pressed.has('ControlLeft') || pressed.has('ControlRight'),
+		})
+	}
+
+	window.addEventListener('keydown', (event) => {
+		pressed.add(event.code)
+	})
+	window.addEventListener('keyup', (event) => {
+		pressed.delete(event.code)
+	})
+	window.addEventListener('blur', () => {
+		pressed.clear()
+		player.clearMove()
+	})
+	canvas.addEventListener('mousedown', (event) => {
 		if (testMode || screen !== 'playing') return
 		if (document.pointerLockElement !== canvas) {
 			void canvas.requestPointerLock()
 			return
 		}
-		breakTargeted()
+		if (event.button === 2) placeTargeted()
+		else breakTargeted()
 	})
 	canvas.addEventListener('contextmenu', (event) => {
 		event.preventDefault()
-		if (!testMode && screen === 'playing') placeTargeted()
 	})
 	window.addEventListener('mousemove', (event) => {
 		if (document.pointerLockElement !== canvas) return
 		player.yaw -= event.movementX * settings.sensitivity
 		player.pitch = Math.max(
-			-Math.PI / 2 + 0.01,
-			Math.min(Math.PI / 2 - 0.01, player.pitch - event.movementY * settings.sensitivity),
+			-PITCH_LIMIT,
+			Math.min(PITCH_LIMIT, player.pitch - event.movementY * settings.sensitivity),
 		)
-	})
-	window.addEventListener('keydown', (event) => {
-		keys.add(event.code)
-	})
-	window.addEventListener('keyup', (event) => {
-		keys.delete(event.code)
 	})
 	window.addEventListener('resize', () => {
 		if (testMode) return
@@ -595,70 +638,81 @@ function main(assets: GameAssets): void {
 		errors.push('unhandledrejection')
 	})
 
-	// --- frame loop ---------------------------------------------------------
+	// --- frame loop ----------------------------------------------------------
 
 	let lastFrame = performance.now()
+	let elapsed = 0
+	let sinceUi = 0
 	let sinceSave = 0
 	let sinceSync = 0
-	let sinceUi = 0
-	let elapsed = 0
+	let ready = false
+	let resolveReady: () => void = () => {}
+	const readyPromise = new Promise<void>((resolve) => {
+		resolveReady = resolve
+	})
 
 	const frame = (): void => {
 		const now = performance.now()
-		const dt = Math.min(0.05, (now - lastFrame) / 1000)
+		const dt = Math.min((now - lastFrame) / 1000, MAX_FRAME_SECONDS)
 		lastFrame = now
 		elapsed += dt
-		sinceSync += dt
-		sinceSave += dt
 		sinceUi += dt
-		tick += 1
+		sinceSave += dt
+		sinceSync += dt
 
-		if (!testMode && screen === 'playing') move(dt)
+		readMove()
+		player.advance(dt * 1000)
 
-		if (needsSectionSync || sinceSync > 0.25) {
-			syncSections()
+		if (
+			world.stream(
+				worldToChunk(Math.floor(player.x)),
+				worldToChunk(Math.floor(player.z)),
+				renderer.getRenderDistance(),
+				{
+					terrain: TERRAIN_PER_FRAME,
+					decorate: DECORATE_PER_FRAME,
+				},
+			)
+		) {
+			needsSectionSync = true
+		}
+		world.pumpDirty()
+
+		if (needsSectionSync || sinceSync >= SECTION_SYNC_SECONDS) {
 			sinceSync = 0
+			syncSections()
 		}
 
-		if (testMode) {
-			// A fixed time of day keeps E2E screenshots deterministic.
-			renderer.setTimeOfDay(0.25)
-		} else {
-			renderer.setTimeOfDay(0.25 + elapsed / DAY_LENGTH_SECONDS)
-			if (sinceSave > AUTOSAVE_SECONDS) {
-				saveWorld()
-				sinceSave = 0
-			}
-		}
-
-		const eyeBlock = world.blockAt(
-			Math.floor(player.x),
-			Math.floor(player.y + PLAYER_EYE),
-			Math.floor(player.z),
-		)
-		renderer.setUnderwater(eyeBlock === BLOCK.WATER || eyeBlock === BLOCK.WATER_FLOWING)
-
-		renderer.camera.position.set(player.x, player.y + PLAYER_EYE, player.z)
+		const eye = player.eye()
+		renderer.camera.position.set(eye.x, eye.y, eye.z)
 		renderer.camera.rotation.set(player.pitch, player.yaw, 0)
-		renderer.flushUploads()
+		// Test mode freezes the sun at noon so screenshots are comparable.
+		renderer.setTimeOfDay(testMode ? 0.5 : (elapsed % DAY_LENGTH_SECONDS) / DAY_LENGTH_SECONDS)
+		renderer.setUnderwater(player.inWater)
+		renderer.flushUploads(PERF.uploadsPerFrame)
 		renderer.render(dt)
 
-		if (sinceUi > UI_INTERVAL_SECONDS) {
-			pushUi()
+		if (sinceUi >= UI_INTERVAL_SECONDS) {
 			sinceUi = 0
+			pushUi()
 		}
-
-		if (!ready && renderer.stats().sections > 0) {
+		if (!testMode && sinceSave >= AUTOSAVE_SECONDS) {
+			sinceSave = 0
+			void saveWorld()
+		}
+		// Ready once the first geometry is on screen; the timeout keeps the promise
+		// from hanging if the camera happens to look at nothing but air.
+		if (!ready && (renderer.stats().quads > 0 || elapsed > 5)) {
 			ready = true
 			resolveReady()
 		}
 		requestAnimationFrame(frame)
 	}
 
-	// --- automation hooks ---------------------------------------------------
+	// --- automation hooks ----------------------------------------------------
 
 	const api: VcTestApi = {
-		ready: whenReady,
+		ready: readyPromise,
 		state(): VcState {
 			const stats = renderer.stats()
 			return {
@@ -668,11 +722,11 @@ function main(assets: GameAssets): void {
 				x: player.x,
 				y: player.y,
 				z: player.z,
-				chunks: stats.sections,
+				chunks: world.loadedChunks,
 				quads: stats.quads,
 				drawCalls: stats.drawCalls,
-				fps: stats.fps,
-				tick,
+				fps: Math.round(stats.fps),
+				tick: player.tick,
 				renderDistance: renderer.getRenderDistance(),
 			}
 		},
@@ -683,14 +737,13 @@ function main(assets: GameAssets): void {
 			breakAt(x, y, z)
 		},
 		placeBlock(x: number, y: number, z: number, id: number): void {
-			placeAt(x, y, z, id)
+			placeAt(x, y, z, (id | 0) as BlockId)
 		},
 		save(): Promise<void> {
-			saveWorld()
-			return Promise.resolve()
+			return saveWorld()
 		},
 		hash(): number {
-			return Number.parseInt(world.stateHash(), 16)
+			return world.stateHash()
 		},
 		errors,
 	}
@@ -701,21 +754,22 @@ function main(assets: GameAssets): void {
 	requestAnimationFrame(frame)
 }
 
-/**
- * Generated assets are optional: when `packages/assets-gen` has not run, the
- * build flips `__VC_HAS_ASSETS__` off and the renderer keeps its procedural
- * placeholder atlas, so the game still boots with no failed requests.
- */
-void loadGameAssets('./')
-	.then((assets) => {
-		main(assets)
-		window.dispatchEvent(
-			new CustomEvent('voxelcraft.assetsReady', {
-				detail: { generated: assets.atlas.generated, sounds: assets.sounds !== null },
-			}),
-		)
-	})
-	.catch((error: unknown) => {
+async function start(): Promise<void> {
+	let assets: GameAssets
+	try {
+		assets = await loadGameAssets()
+	} catch (error) {
 		console.warn('[voxelcraft] asset loading failed, using fallbacks:', error)
-		main({ atlas: fallbackAtlas(), sounds: null })
-	})
+		assets = { atlas: fallbackAtlas(), sounds: null }
+	}
+	await boot(assets)
+	window.dispatchEvent(
+		new CustomEvent('voxelcraft.assetsReady', {
+			detail: { generated: assets.atlas.generated, sounds: assets.sounds !== null },
+		}),
+	)
+}
+
+void start().catch((error: unknown) => {
+	console.warn('[voxelcraft] boot failed:', error)
+})
