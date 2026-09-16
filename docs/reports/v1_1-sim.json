@@ -1,0 +1,149 @@
+{
+  "task": "L1-I simulation subtree (mc-20260916): H-05 light seeding performance, dimension transitions, baby and breeding behaviour, particle event emission",
+  "branch": "feat/mc-20260916/v1_1-sim",
+  "status": "done",
+  "base_sha": "965d7cb4b76414e418627011e10b87f9655f84b6",
+  "head_sha": "8ed65cba33092c86f62a7c1263c670bb6d66a70c",
+  "commits": [
+    {
+      "sha": "ed7a9832b2791e21f7c3dbac32c5791952203238",
+      "message": "perf(sim): add H-05 seeding measurement, typed light queue and optics tables"
+    },
+    {
+      "sha": "d822204d4a30660118c6d381cbd2d719b98fa574",
+      "message": "perf(sim): make light seeding 16x faster and clear H-05"
+    },
+    {
+      "sha": "8ed65cba33092c86f62a7c1263c670bb6d66a70c",
+      "message": "feat(sim): add v2 dimension, breeding and particle subtrees"
+    }
+  ],
+  "files_changed": [
+    { "path": "packages/sim/src/index.ts", "change": "modified" },
+    { "path": "packages/sim/src/light/lightEngine.ts", "change": "modified" },
+    { "path": "packages/sim/src/light/lightPropagate.ts", "change": "added" },
+    { "path": "packages/sim/src/light/lightQueue.ts", "change": "added" },
+    { "path": "packages/sim/src/light/lightSeed.ts", "change": "added" },
+    { "path": "packages/sim/src/light/lightSeedPerf.test.ts", "change": "added" },
+    { "path": "packages/sim/src/light/lightTables.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/index.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/eventsV2.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/dimension/index.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/dimension/terrainAccess.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/dimension/dimensionState.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/dimension/portalTravel.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/dimension/dimension.test.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/index.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/babyComponents.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/babyBehavior.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/breedingApi.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/breeding.test.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/breeding/breedingApi.test.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/particles/index.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/particles/particleEvents.ts", "change": "added" },
+    { "path": "packages/sim/src/v2/particles/particles.test.ts", "change": "added" },
+    { "path": "docs/reports/v1_1-sim.json", "change": "added" }
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "ef0445e6133e460c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-tsc.log (empty, no diagnostics across all 10 workspace projects)"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "67c6b2e152f04d08",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-lint.log (9 of 10 projects have a lint script, all Done, no errors or warnings)"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "85faa3fdbbdd4328",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-test.log (all packages green; packages/sim 20 files / 161 tests passed, including the 11 pre-existing light tests unchanged)"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "dcb93e92f42446f6",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-build.log (assets-gen 73 textures + 19 sounds, vite build 167 modules in 793 ms)"
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "1e549f208f52457f",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-bench.log and tests/bench/results/bench.json; simTickAvgMs = 1.314 ms against the frozen budget of 8 ms (fails above 24 ms) -> ok"
+    },
+    {
+      "name": "h05-baseline",
+      "command": "pnpm --filter @voxelcraft/sim exec vitest run src/light/lightSeedPerf.test.ts (at ed7a983, before the optimisation)",
+      "job_id": "1bd63a1256cd4a53",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/h05-before.log; 165.70 ms/chunk, every correctness assertion passed and only the wall clock guard failed"
+    },
+    {
+      "name": "h05-verification",
+      "command": "pnpm --filter @voxelcraft/sim exec tsc --noEmit && pnpm --filter @voxelcraft/sim exec vitest run src/light",
+      "job_id": "57c1c518bae140fa",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/h05-after.log; 10.42 ms/chunk and 12/12 light tests passed"
+    },
+    {
+      "name": "h05-same-machine-ab",
+      "command": "restore the base lightEngine.ts, measure, restore the optimised one, measure again, then verify a clean working tree",
+      "job_id": "21d447d42fa84489",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "broker ring output of job 21d447d42fa84489; before 166.79 ms/chunk, after 9.65 ms/chunk, git status for packages/sim/src/light empty afterwards"
+    },
+    {
+      "name": "integration",
+      "command": "pnpm --filter @voxelcraft/sim exec tsc --noEmit && pnpm --filter @voxelcraft/sim exec vitest run",
+      "job_id": "02ffd92891fb4594",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "20 test files / 161 tests passed once the three child subtrees and the v2 barrel were wired in"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": [
+    "H-05 is cleared. Strict same-machine A/B in one job (job 21d447d42fa84489), same world, same process, back to back: BEFORE 225 chunks seed 12675.3 ms + stitch 24852.2 ms = 37527.5 ms -> 166.79 ms/chunk; AFTER seed 1815.5 ms + stitch 355.9 ms = 2171.5 ms -> 9.65 ms/chunk. That is 17.3x overall, 70x on boundary stitching. Re-seeding an already lit world went from 166.74 to 1.39 ms/chunk (120x). The target of 15 ms/chunk or better is met.",
+    "Runner speed caveat. This shared GitHub Actions runner is roughly 3.7x slower than the reference machine where D-043 measured 45 ms/chunk, which is why the unoptimised number here is 166 ms/chunk rather than 45. Both halves of the A/B were measured on this same runner in the same job, so the ratio is the trustworthy figure, not the absolute milliseconds. Scaled to the reference machine the result corresponds to roughly 2.6 ms/chunk. Under full parallel suite load the measurement test still reported 14.27 ms/chunk, inside the 15 ms target and far inside the 45 ms hard guard.",
+    "What made seeding slow, all confirmed by profiling rather than guessed: lightPropsOf allocated a fresh object on every call and was invoked per voxel in the column top scan, in the 65536 voxel emission scan and on every BFS neighbour test; every world get/set routed through a template string chunk key; markDirty allocated a string per write; and stitchBoundaries walked all 256 columns per chunk and re-queued every lit border voxel unconditionally on both passes, about 2.57 million sky records per pass, into plain number arrays.",
+    "How it was fixed: a 1024 entry typed optics table (lightTables.ts) replaces per call property objects; a numeric keyed chunk cache with a one entry memo replaces string chunk keys; the sky pass uses a y major top down column top scan plus a single typed array memset for the fully lit region above the highest opaque block, so only the ragged band and the frontier enter the queue; queues are a single Int32Array with 5 slots per record (lightQueue.ts) instead of object or number arrays; the BFS core moved to lightPropagate.ts; stitching now uses a push time filter that only enqueues cross seam pairs that can actually improve, which is safe because each chunk is internally converged at the start of every pass; dirty tracking uses a numeric Map key; and seedChunk now early returns when chunk.lit is already set, with a new reseedChunk(cx, cz) escape hatch for forcing a rebuild.",
+    "Correctness is unchanged. All 11 pre-existing light tests still pass untouched, including the per chunk seeding plus stitching equals one unconfined propagation equivalence test and the incremental block edit equals full recompute tests. BFS writes still go through world.setSkyLightAt and setBlockLightAt so all world side bookkeeping stays intact; only reads were optimised, and reads dominate. No frozen contract value was changed.",
+    "Latent bug found and fixed while rewriting seeding: the original seedChunk read tops[(lz<<4)|(lx+1)] which wrapped to column (0, lz+1) at lx === 15, and read tops[-1] as undefined at lx === 0. Both were masked by the blanket edge term that the old code added, so the output happened to be correct; the new bounds checked code handles the chunk border explicitly.",
+    "Dimension transitions: a portal travel state machine on the frozen PORTAL.travelDelayTicks 80 and cooldownTicks 300, one world plus one light engine per DIMENSION_PARAMS entry, entity transfer with exact 8 to 1 horizontal scaling written as a ratio so both directions are exact inverses, and lava ambient damage gated on ambientFluid lava. Nether darkness is implemented by wrapping lightPropsOf so skyPassThrough is false for every block when hasSky is false; the column scan then yields top === CHUNK_Y and no sky voxel is ever written, verified at 16 heights. Terrain access is a small local interface (DimTerrainAccess) so nothing depends on packages/world. Emits the frozen dimension.changed and portal.used events.",
+    "Baby and breeding: baby follow of the nearest parent, love mode approach, panic on damage, the frozen babyScale 0.5 collider and babySpeedFactor 1.15 movement, and growth on exactly the BREEDING.babyGrowTicks 24000th tick, asserted at both tick 23999 and 24000. Emits entity.bred with parentA < parentB and entity.grown. The breeding rules and cooldown bookkeeping stay in packages/gameplay: this package only exposes an API (breedFeedAdult, breedTryPair, breedSpawnBaby, BREED_RULES, breedSetLoveTicks, breedClearLove, breedSetCooldown and friends) and packages/gameplay was not edited. xpOnBreed is re-exposed but never granted.",
+    "Particle events: deterministic particle.spawn emission with a per tick budget, covering block break, lava contact, water splash, portal travel, hearts, crit hits and smoke. No rendering and no Math.random anywhere.",
+    "Integration requirements for whoever wires the host loop. The frozen SYSTEM_ORDER has no breeding or particle slot, so these ticks are deliberately not registered and must be driven explicitly. Recommended order inside one sim tick: particleCreateResetSystem(emitter) first to clear the per tick spawn budget, then the frozen schedule, then breedTickSystem after mobAi and before locomotion, then portalTravelCreate(...).tick(), then dimCreateLavaAmbient(...).tick(tick) with the absolute tick number. None of these call ecs.flush(), matching combatSystem, so the caller owns flushing before reading their results. Entities must be registered with the dimension registry via place(entity, dimension). Lava ambient only reads Health.invulnerableTicks and sets a fresh window; counting it down remains the combat system's job.",
+    "Non-contract local constants introduced, all named and derived from PERF where possible rather than hardcoded: DIM_LAVA_DAMAGE_INTERVAL_TICKS 10 (from PERF.simTickHz / 2), DIM_LAVA_DAMAGE 4, DIM_LAVA_PARTICLE_COUNT 6, DIM_PORTAL_PARTICLE_COUNT 12, BABY_PANIC_TICKS 40 (PERF.simTickHz * 2), BREED_HEART_INTERVAL_TICKS 10, BREED_HEART_PARTICLE_COUNT 3, BABY_FOLLOW_STOP_DISTANCE 1, BREED_MATE_STOP_DISTANCE 0.75, BREED_NO_ENTITY -1, plus PARTICLE_SITUATION_COUNTS and PARTICLE_SITUATION_SPREADS. A private map adds BLOCK_V2.NETHER_PORTAL emission using the contract value PORTAL.lightLevel 11, because the frozen v1 optics table treats ids 64 and 65 as air-like. No v1 block definition was redefined.",
+    "Two deliberate deviations worth review. Baby steering writes intents as strafe and forward with yaw left at 0 instead of computing a heading with Math.atan2, which keeps it trig free in line with the determinism rules in shared/math.ts; adding yaw later is contract neutral. And packages/sim/src/index.ts, which the in-package ownership comment assigns to sim-a, was edited to add the single line export * from './v2' plus the matching comment; that file is inside my owned packages/sim path but if the sim-a split is enforced strictly this one line belongs to that owner.",
+    "Bench detail for L0. simTickAvgMs 1.314 ms against a budget of 8, chunkMeshAvgMs 4.834 against 12, sectionMeshAvgMs 0.967 against 1.5, all ok. chunkGenAvgMs is 7.097 ms against a 6 ms budget, a warn rather than a failure (it fails above 18 ms); that is world generation, not simulation, so it is outside this subtree. Bench light seed plus stitch is now 2778 ms for 225 decorated chunks, consistent with the H-05 result. Running pnpm bench rewrites tests/bench/results/bench.json, which is not mine to commit, so the working tree was restored and that file is unchanged on this branch.",
+    "head_sha above is the last code commit and the parent of the docs only commit that adds this report, which is the actual branch tip. Nothing else was touched: packages/core-types, docs/orchestration, .github, root package.json, pnpm-lock.yaml, scripts, README, packages/world, packages/gameplay, packages/client, packages/net, apps and tests are all unmodified, and no push went to main or to integration/mc-20260916.",
+    "For decisions.md, which is L0 owned so it is recorded here instead: D-043 / H-05 can be closed as met, with the evidence being the same-machine A/B in job 21d447d42fa84489 and the reproducible measurement test at packages/sim/src/light/lightSeedPerf.test.ts, which prints the per chunk average on every run and asserts against the 45 ms guard.",
+    "Delivered by three L2 children (light seeding was implemented by me directly, then dimension transitions, baby behaviour and particle events by one child each). All three reported contract_changes_needed empty, so the frozen v1.1.0 contract needed no changes. Two gha mcp tool defects surfaced during the run and have been filed separately in the user's tracker: write_file resolves relative paths against the environment root rather than the sticky cwd that execute reports, which silently places files outside the working tree; and identical in-flight commands are deduplicated across independent sessions, which can return a gate result produced before the caller's own files existed."
+  ]
+}

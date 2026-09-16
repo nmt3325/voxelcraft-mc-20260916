@@ -10,6 +10,8 @@ const graph = {
 	'packages/assets-gen': ['core-types'],
 	'packages/client': ['core-types', 'world', 'sim', 'gameplay', 'assets-gen'],
 	'apps/game': ['core-types', 'world', 'sim', 'gameplay', 'client', 'assets-gen'],
+	'packages/net': ['core-types'],
+	'apps/server': ['core-types', 'net'],
 	'tests/e2e': ['core-types'],
 	'tests/bench': ['core-types', 'world', 'sim', 'gameplay', 'client'],
 }

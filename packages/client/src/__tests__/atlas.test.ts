@@ -1,10 +1,31 @@
 import { ATLAS_COLUMNS, ATLAS_ROWS, TEXTURE_TILE_PX } from '@voxelcraft/core-types'
 import { describe, expect, it } from 'vitest'
-import { fallbackAtlas, sliceAtlasToLayers, type AtlasPixels, type AtlasSource } from '../render/atlasTexture'
+import {
+	fallbackAtlas,
+	sliceAtlasToLayers,
+	type AtlasPixels,
+	type AtlasSource,
+} from '../render/atlasTexture'
 import { TEXTURE_COUNT, TEXTURE_NAMES, textureLayer } from '../mesher/textures'
 
 const TILE = TEXTURE_TILE_PX
 const TILE_BYTES = TILE * TILE * 4
+
+function gcd(a: number, b: number): number {
+	return b === 0 ? a : gcd(b, a % b)
+}
+
+/**
+ * Smallest stride >= 7 that is coprime with `count`, so stepping by it visits
+ * every tile exactly once. Hard-coding a stride silently degenerates whenever
+ * the texture count gains that factor (119 = 7 * 17 collapsed 7 to 17 tiles).
+ */
+function coprimeStride(count: number): number {
+	for (let stride = 7; stride < count; stride++) {
+		if (gcd(stride, count) === 1) return stride
+	}
+	return 1
+}
 
 function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
 	if (a.length !== b.length) return false
@@ -78,17 +99,24 @@ describe('atlas slicing', () => {
 		const layers = sliceAtlasToLayers(source)
 		for (let index = 0; index < TEXTURE_COUNT; index++) {
 			const tile = source.manifest.layerOf[TEXTURE_NAMES[index]] ?? 0
-			expect(bytesEqual(layerBytes(layers, index), tileBytes(source.pixels, tile, source.manifest.columns))).toBe(true)
+			expect(
+				bytesEqual(
+					layerBytes(layers, index),
+					tileBytes(source.pixels, tile, source.manifest.columns),
+				),
+			).toBe(true)
 		}
 	})
 
 	it('reorders a permuted manifest back into client order', () => {
-		// 7 is coprime with TEXTURE_COUNT (73), so this is a bijection on tiles.
+		// The stride has to be coprime with TEXTURE_COUNT for this to be a
+		// bijection on tiles, so derive one instead of assuming a count.
 		const source = fallbackAtlas()
+		const stride = coprimeStride(TEXTURE_COUNT)
 		const permuted: Record<string, number> = {}
 		const expectedTile = new Map<number, number>()
 		TEXTURE_NAMES.forEach((name, index) => {
-			const tile = (index * 7 + 3) % TEXTURE_COUNT
+			const tile = (index * stride + 3) % TEXTURE_COUNT
 			permuted[name] = tile
 			expectedTile.set(index, tile)
 		})
@@ -98,7 +126,12 @@ describe('atlas slicing', () => {
 		expect(seen.size).toBe(TEXTURE_COUNT)
 		for (let index = 0; index < TEXTURE_COUNT; index++) {
 			const tile = expectedTile.get(index) ?? -1
-			expect(bytesEqual(layerBytes(layers, index), tileBytes(source.pixels, tile, source.manifest.columns))).toBe(true)
+			expect(
+				bytesEqual(
+					layerBytes(layers, index),
+					tileBytes(source.pixels, tile, source.manifest.columns),
+				),
+			).toBe(true)
 		}
 	})
 

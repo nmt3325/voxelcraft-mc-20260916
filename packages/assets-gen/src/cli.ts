@@ -11,8 +11,8 @@ const outDir = resolve(packageRoot, ASSET_OUTPUT_DIR)
 const result = writeAllAssets(outDir)
 
 console.log(
-  `assets-gen: ${result.textureCount} textures, ${result.soundCount} sounds -> ${result.outDir}`,
+	`assets-gen: ${result.textureCount} textures, ${result.soundCount} sounds -> ${result.outDir}`,
 )
 console.log(
-  `assets-gen: atlas.png ${result.atlasPngBytes} bytes, ${result.files.length} files written`,
+	`assets-gen: atlas.png ${result.atlasPngBytes} bytes, ${result.files.length} files written`,
 )

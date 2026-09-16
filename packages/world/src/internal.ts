@@ -285,3 +285,154 @@ export interface FeatureSet {
 }
 
 export type CreateFeatureSet = (terrain: TerrainContext) => FeatureSet
+
+/* ==================== v2 seam: dimensions, villages, portals ============= */
+
+import type { DimensionId, VillagePlan, VoxelView } from '@voxelcraft/core-types'
+import { BLOCK_V2, NETHER_GEN } from '@voxelcraft/core-types'
+
+/**
+ * Frozen per-field salts for the v2 passes. Same rule as SALT: changing one
+ * changes every already generated world, so they only move together with the
+ * NETHER_GEN.genVersion / VILLAGE.layoutVersion bump owned by core-types.
+ */
+export const SALT_V2 = {
+	netherSpace: 0x6601,
+	netherBedrock: 0x6602,
+	netherQuartz: 0x6603,
+	netherGlowstone: 0x6604,
+	netherSoulSand: 0x6605,
+	netherMagma: 0x6606,
+	villageRegion: 0x7701,
+	villageJitter: 0x7702,
+	villageLayout: 0x7703,
+	villagePiece: 0x7704,
+	portalLink: 0x7801,
+	portalLanding: 0x7802,
+} as const
+
+/**
+ * Nether open-space field. The contract only freezes NETHER_GEN.caveThreshold,
+ * so the field shape below belongs to this package. It is sampled on a coarse
+ * lattice anchored to world coordinates and trilinearly interpolated, exactly
+ * like CAVES, so two chunks sharing a border carve the same voxels.
+ */
+export const NETHER_NOISE = {
+	latticeStep: 4,
+	/** Y is scaled before sampling, so caverns read as wide halls. */
+	verticalSquash: 1.5,
+	/**
+	 * fbm3 normalizes its octave sum by the accumulated amplitude, so three
+	 * octaves at gain 0.5 land in a band roughly 0.13 wide around zero and a
+	 * raw sample would practically never reach NETHER_GEN.caveThreshold. The
+	 * field is scaled by its typical deviation before the comparison, which
+	 * puts the frozen threshold in the useful part of the distribution and
+	 * leaves roughly a quarter of the shell open.
+	 */
+	amplitude: 4.5,
+	space: { octaves: 3, lacunarity: 2.0, gain: 0.5, frequency: 1 / 48, rotatePerOctave: false },
+	/** Open space tapers off over this many blocks under the roof and over the floor. */
+	fadeBlocks: 5,
+	fadeBias: 0.3,
+} as const
+
+/** Top bedrock layer of the nether roof shell. Always solid. */
+export const NETHER_ROOF_TOP = NETHER_GEN.roofY + NETHER_GEN.bedrockLayers - 1
+
+/** The only block a nether ore or patch pass may overwrite. */
+export function isNetherReplaceable(id: number): boolean {
+	return id === BLOCK_V2.NETHERRACK
+}
+
+/** Solid nether ground: what a patch may sit on and a landing spot may stand on. */
+export function isNetherGround(id: number): boolean {
+	return (
+		id === BLOCK_V2.NETHERRACK ||
+		id === BLOCK_V2.SOUL_SAND ||
+		id === BLOCK_V2.MAGMA_BLOCK ||
+		id === BLOCK_V2.QUARTZ_ORE ||
+		id === BLOCK_V2.NETHER_BRICKS
+	)
+}
+
+/** Bulk nether terrain. Implemented by L1-F in `src/nether/terrain.ts`. */
+export interface NetherTerrain {
+	/** Bedrock floor, netherrack shell, bedrock roof, caverns and the lava sea. */
+	fillChunk(cx: number, cz: number, blocks: Uint16Array, fluids: Uint8Array): void
+	/** True when the cavern field leaves this world voxel open. */
+	openAt(wx: number, y: number, wz: number): boolean
+	/** First standable y above the lava sea, or lavaSeaLevel for a closed column. */
+	floorYAt(wx: number, wz: number): number
+}
+
+/**
+ * Nether ores, patches and clusters. Implemented in `src/nether/decoration.ts`.
+ * placeChunk runs inside generateChunk and may only touch its own chunk;
+ * decorate runs from decorate() and may reach across a chunk border.
+ */
+export interface NetherDecoration {
+	placeChunk(cx: number, cz: number, blocks: Uint16Array, fluids: Uint8Array): void
+	decorate(cx: number, cz: number, view: VoxelEditView): void
+}
+export type CreateNetherDecoration = (
+	seed: number,
+	noise: NoiseBasis,
+	terrain: NetherTerrain,
+) => NetherDecoration
+
+/** Deterministic village planner. Implemented in `src/village/plan.ts`. */
+export interface VillagePlanner {
+	/** The village of one region, or null when that region holds none. */
+	planRegion(regionX: number, regionZ: number): VillagePlan | null
+	/** Every plan whose pieces can reach this chunk. */
+	plansForChunk(cx: number, cz: number): readonly VillagePlan[]
+}
+
+/** Village placement pass. Implemented in `src/village/build.ts`. */
+export interface VillageBuilder {
+	readonly planner: VillagePlanner
+	/** Writes the parts of every nearby plan that belong to this chunk. */
+	decorate(cx: number, cz: number, view: VoxelEditView): void
+}
+export type CreateVillageBuilder = (terrain: TerrainContext) => VillageBuilder
+
+/** One validated obsidian portal frame. */
+export interface PortalFrame {
+	/** Axis the opening lies along; the frame is one voxel thick on the other. */
+	readonly axis: 'x' | 'z'
+	/** Lowest, most negative inner corner of the opening. */
+	readonly x: number
+	readonly y: number
+	readonly z: number
+	readonly innerWidth: number
+	readonly innerHeight: number
+}
+
+/** Portal validation and linking. Implemented in `src/portal/**`. */
+export interface PortalLinker {
+	/** The frame around this inner voxel, or null when it is not a valid frame. */
+	validateFrame(view: VoxelView, x: number, y: number, z: number): PortalFrame | null
+	/** Frozen horizontal coordinate scale between two dimensions. */
+	linkedPosition(
+		from: DimensionId,
+		to: DimensionId,
+		x: number,
+		y: number,
+		z: number,
+	): { x: number; y: number; z: number }
+	/** Nearest existing frame inside PORTAL.linkSearchRadius, or null. */
+	findLinkTarget(view: VoxelView, x: number, y: number, z: number): PortalFrame | null
+	/**
+	 * Safe landing spot on the far side: an existing frame when one is in range,
+	 * otherwise a new frame built into the terrain. Null when the view cannot
+	 * host one.
+	 */
+	ensureLanding(
+		view: VoxelEditView,
+		to: DimensionId,
+		x: number,
+		y: number,
+		z: number,
+	): { frame: PortalFrame; created: boolean } | null
+}
+export type CreatePortalLinker = (seed: number, dimension: DimensionId) => PortalLinker

@@ -5,9 +5,11 @@
  *  - sim-a: index.ts, shared/, ecs/, schedule/, physics/, testing/, replay/
  *  - sim-b: light/, fluid/
  *  - sim-c: mob/, pathfind/, combat/
+ *  - v1.1:  v2/ (dimensions and portals, breeding and babies, particles)
  *
  * Every subtree re-exports flat, so public symbols are prefixed by subtree
- * (light*, fluid*, mob*, path*, combat*) to keep this barrel collision free.
+ * (light*, fluid*, mob*, path*, combat*, and in v2/ dim*, portalTravel*,
+ * breed*, baby*, particle*) to keep this barrel collision free.
  */
 export const PACKAGE_NAME = '@voxelcraft/sim'
 
@@ -22,3 +24,4 @@ export * from './fluid'
 export * from './mob'
 export * from './pathfind'
 export * from './combat'
+export * from './v2'
