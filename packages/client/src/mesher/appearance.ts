@@ -1,4 +1,4 @@
-import { BLOCK, RENDER_LAYER, type RenderLayer } from '@voxelcraft/core-types'
+import { BLOCK, BLOCK_V2, RENDER_LAYER, type RenderLayer } from '@voxelcraft/core-types'
 import { textureLayer } from './textures'
 
 /**
@@ -53,7 +53,9 @@ interface CubeSpec {
 }
 
 const TABLE_SIZE = 256
-const table: Array<BlockAppearance | null> = new Array<BlockAppearance | null>(TABLE_SIZE).fill(null)
+const table: Array<BlockAppearance | null> = new Array<BlockAppearance | null>(TABLE_SIZE).fill(
+	null,
+)
 const opaqueLookup = new Uint8Array(TABLE_SIZE)
 
 function defineCube(id: number, name: string, spec: CubeSpec = {}): void {
@@ -107,6 +109,7 @@ function defineCross(id: number, name: string, tint = TINT.None as number, emiss
 const GROUP_WATER = 900
 const GROUP_LAVA = 901
 const GROUP_GLASS = 902
+const GROUP_PORTAL = 903
 
 const SIMPLE_CUBES: ReadonlyArray<readonly [number, string]> = [
 	[BLOCK.STONE, 'stone'],
@@ -244,7 +247,11 @@ defineCube(BLOCK.CHEST, 'chest', {
 })
 defineCube(BLOCK.GLOWSTONE, 'glowstone', { all: 'glowstone', emission: 15 })
 defineCube(BLOCK.REDSTONE_LAMP_LIT, 'redstone_lamp_lit', { all: 'redstone_lamp_lit', emission: 15 })
-defineCube(BLOCK.PISTON, 'piston', { side: 'piston_side', top: 'piston_top', bottom: 'piston_side' })
+defineCube(BLOCK.PISTON, 'piston', {
+	side: 'piston_side',
+	top: 'piston_top',
+	bottom: 'piston_side',
+})
 // Doors are modelled as cutout cubes until gameplay supplies real block shapes.
 defineCube(BLOCK.DOOR_LOWER, 'door_lower', {
 	all: 'door_lower',
@@ -256,6 +263,67 @@ defineCube(BLOCK.DOOR_UPPER, 'door_upper', {
 	layer: RENDER_LAYER.Cutout,
 	opaque: false,
 })
+
+/**
+ * v2 blocks (BLOCK_V2 64..81).
+ *
+ * `MeshRequest` carries block ids only and no per-block state, so crops render
+ * at their ripe stage; the other seven stage tiles per crop are registered in
+ * `TEXTURE_NAMES` so they are ready once block state reaches the mesher.
+ */
+const V2_SIMPLE_CUBES: ReadonlyArray<readonly [number, string]> = [
+	[BLOCK_V2.NETHERRACK, 'netherrack'],
+	[BLOCK_V2.SOUL_SAND, 'soul_sand'],
+	[BLOCK_V2.QUARTZ_ORE, 'quartz_ore'],
+	[BLOCK_V2.NETHER_BRICKS, 'nether_bricks'],
+	[BLOCK_V2.BOOKSHELF, 'bookshelf'],
+]
+for (const [id, texture] of V2_SIMPLE_CUBES) defineCube(id, texture, { all: texture })
+
+defineCube(BLOCK_V2.MAGMA_BLOCK, 'magma_block', { all: 'magma', emission: 3 })
+// Emission matches the portal light level frozen in the v2 contract.
+defineCube(BLOCK_V2.NETHER_PORTAL, 'nether_portal', {
+	all: 'nether_portal',
+	layer: RENDER_LAYER.Translucent,
+	opaque: false,
+	selfCull: true,
+	cullGroup: GROUP_PORTAL,
+	emission: 11,
+})
+defineCube(BLOCK_V2.FARMLAND, 'farmland', { top: 'farmland_dry', side: 'dirt', bottom: 'dirt' })
+defineCube(BLOCK_V2.FARMLAND_WET, 'farmland_wet', {
+	top: 'farmland_wet',
+	side: 'dirt',
+	bottom: 'dirt',
+})
+defineCube(BLOCK_V2.GRAVEL_PATH, 'gravel_path', {
+	top: 'gravel_path_top',
+	side: 'gravel_path_side',
+	bottom: 'dirt',
+})
+defineCube(BLOCK_V2.HAY_BLOCK, 'hay_block', { top: 'hay_top', bottom: 'hay_top', side: 'hay_side' })
+defineCube(BLOCK_V2.ENCHANTING_TABLE, 'enchanting_table', {
+	top: 'enchanting_table_top',
+	side: 'enchanting_table_side',
+	bottom: 'enchanting_table_bottom',
+})
+// Thin geometry is not modelled yet, so walls, fences and gates are cutout
+// cubes that never occlude the faces they touch.
+const V2_CUTOUT_CUBES: ReadonlyArray<readonly [number, string]> = [
+	[BLOCK_V2.COBBLESTONE_WALL, 'cobblestone_wall'],
+	[BLOCK_V2.FENCE, 'fence'],
+	[BLOCK_V2.FENCE_GATE, 'fence_gate'],
+]
+for (const [id, texture] of V2_CUTOUT_CUBES) {
+	defineCube(id, texture, { all: texture, layer: RENDER_LAYER.Cutout, opaque: false })
+}
+
+const V2_CROPS: ReadonlyArray<readonly [number, string]> = [
+	[BLOCK_V2.WHEAT_CROP, 'wheat_stage_7'],
+	[BLOCK_V2.CARROT_CROP, 'carrot_stage_7'],
+	[BLOCK_V2.POTATO_CROP, 'potato_stage_7'],
+]
+for (const [id, texture] of V2_CROPS) defineCross(id, texture, TINT.None, 0)
 
 for (let id = 0; id < TABLE_SIZE; id++) {
 	const appearance = table[id]
