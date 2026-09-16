@@ -17,16 +17,19 @@ import {
 	BLOCK_V2,
 	CHUNK_X,
 	CHUNK_Z,
+	chunkKey,
+	DIMENSION,
+	FARMING,
 	GAME_MODE,
 	INPUT_BIT,
+	ITEM_V2,
 	NET,
 	PARTICLE,
 	PERF,
 	PHYSICS,
-	SECTIONS_PER_CHUNK,
 	SECTION_Y,
-	chunkKey,
 	sectionKey,
+	SECTIONS_PER_CHUNK,
 	worldToChunk,
 	type BlockId,
 	type GameSettings,
@@ -55,22 +58,34 @@ import {
 	type UiWorldEntry,
 } from '@voxelcraft/client'
 import {
-	BLOCKS,
 	addStack,
 	craftFromInventory,
 	heldStack,
 	isCreative,
+	isOreBlock,
 	makeStack,
 	removeItem,
 	selectHotbar,
+	setHeldStack,
 	swapCursorWithSlot,
+	type FarmWorld,
 } from '@voxelcraft/gameplay'
-import { aabbOverlaps, isReplaceableBlock, raycastVoxels, voxelBox } from '@voxelcraft/sim'
+import {
+	aabbOverlaps,
+	createEventBusV2,
+	isReplaceableBlock,
+	raycastVoxels,
+	voxelBox,
+} from '@voxelcraft/sim'
 import { loadGameAssets, type GameAssets } from './assets'
 import { PlayerRuntime } from './player'
 import { buildSnapshot, createCreativeInventory, heldBlockId } from './ui-bridge'
 import { ChunkWorld } from './world/chunkWorld'
 import { createSaveMeta, openWorldPersistence } from './world/store'
+import { createDimensions } from './game/dimensions'
+import { createMultiplayer } from './game/multiplayer'
+import { createProgression } from './game/progression'
+import { BLOCKS_V2, V2_INVENTORY } from './registries'
 
 const DEFAULT_SEED = 20260916
 const DAY_LENGTH_SECONDS = 600
@@ -130,6 +145,43 @@ interface VcParticleStats {
 	spawnBudget: number
 }
 
+/** Experience the HUD shows, so e2e can prove the xp path is wired. */
+interface VcXpInfo {
+	level: number
+	total: number
+	progress: number
+	orbs: number
+}
+
+interface VcFarmInfo {
+	crops: number
+	mature: number
+}
+
+interface VcDimensionInfo {
+	id: number
+	label: string
+}
+
+interface VcEnchantInfo {
+	open: boolean
+	bookshelves: number
+	offers: number
+}
+
+interface VcNetInfo {
+	enabled: boolean
+	state: string
+	players: number
+	address: string
+}
+
+interface VcPos {
+	x: number
+	y: number
+	z: number
+}
+
 interface VcTestApi {
 	ready: Promise<void>
 	state(): VcState
@@ -140,6 +192,19 @@ interface VcTestApi {
 	placeBlock(x: number, y: number, z: number, id: number): void
 	save(): Promise<void>
 	hash(): number
+	xp(): VcXpInfo
+	farm(): VcFarmInfo
+	dimension(): VcDimensionInfo
+	enchanting(): VcEnchantInfo
+	net(): VcNetInfo
+	/** Advances the fixed 20 Hz simulation. Returns the new tick. */
+	advanceTicks(count: number): number
+	teleport(x: number, y: number, z: number): void
+	till(x: number, y: number, z: number): boolean
+	plant(x: number, y: number, z: number): boolean
+	harvest(x: number, y: number, z: number): number
+	buildPortal(): VcPos
+	xpFromOre(): number
 	errors: string[]
 }
 
@@ -191,6 +256,15 @@ const CROP_BLOCKS: readonly BlockId[] = [
 const BREAK_PARTICLES = 14
 const PLACE_PARTICLES = 6
 
+/** Particles for a crop that just grew a stage. */
+const GROW_PARTICLES = 3
+
+/** Sim ticks caught up per frame for growth, orbs and portal travel. */
+const SIM_CATCHUP_LIMIT = 8
+
+/** Cap for the automation hook that fast-forwards the simulation. */
+const MAX_ADVANCE_TICKS = 2000
+
 /** Repeat cadence while a touch long-press holds the attack button. */
 const TOUCH_MINE_SECONDS = 0.25
 
@@ -235,7 +309,7 @@ async function boot(assets: GameAssets): Promise<void> {
 	const savedKeys = new Set<string>()
 	for (const pos of await persistence.chunkKeys()) savedKeys.add(chunkKey(pos.cx, pos.cz))
 
-	const world = new ChunkWorld({
+	let world = new ChunkWorld({
 		seed,
 		source: {
 			has: (cx: number, cz: number) => savedKeys.has(chunkKey(cx, cz)),
@@ -291,6 +365,60 @@ async function boot(assets: GameAssets): Promise<void> {
 		simulatePlayer: !testMode,
 	})
 
+	// --- v2 features ---------------------------------------------------------
+
+	// One bus carries the v2 events (xp.changed, crop.grown, dimension.changed,
+	// portal.used, enchant.applied) between the modules below.
+	const events = createEventBusV2()
+
+	/** Farming and enchanting read and write through the active world. */
+	const farmWorld: FarmWorld = {
+		getBlock: (x, y, z) => world.blockAt(x, y, z),
+		setBlock: (x, y, z, id) => {
+			if (world.setBlock(x, y, z, id)) needsSectionSync = true
+		},
+	}
+
+	// The Overworld is the world built above, so a restored save stays
+	// authoritative; the Nether is generated from the seed on first entry.
+	const dimensions = createDimensions({
+		seed,
+		ecs: player.ecs,
+		entity: player.entity,
+		events,
+		overworld: world,
+		onWorldEdited: () => {
+			needsSectionSync = true
+		},
+	})
+
+	const progression = createProgression({
+		seed,
+		events,
+		onEffect: (effect, x, y, z) => {
+			if (effect === 'enchant') {
+				burstAt(x, y, z, PARTICLE.Portal, PLACE_PARTICLES)
+				soundEvents.play(SOUND_EVENT.EnchantApply)
+				return
+			}
+			if (effect === 'crop-harvest') {
+				burstAt(x, y, z, PARTICLE.BlockBreak, PLACE_PARTICLES)
+				return
+			}
+			burstAt(x, y, z, PARTICLE.Smoke, effect === 'crop-grown' ? GROW_PARTICLES : PLACE_PARTICLES)
+		},
+	})
+
+	// Single player by default: this only dials out with `?mp=1` or the pause
+	// menu toggle.
+	const multiplayer = createMultiplayer({
+		params,
+		playerName: worldId,
+		onError: (message) => {
+			errors.push(`net: ${message}`)
+		},
+	})
+
 	// --- client -------------------------------------------------------------
 
 	const renderer = new VoxelRenderer({
@@ -332,13 +460,15 @@ async function boot(assets: GameAssets): Promise<void> {
 	let sinceMine = 0
 
 	/** Raycast view where plants and torches are pickable but fluids are not. */
-	const targetView: VoxelView = {
-		...world.voxels,
+	const targetViewOf = (target: ChunkWorld): VoxelView => ({
+		...target.voxels,
 		isSolid: (x: number, y: number, z: number): boolean => {
-			const id = world.blockAt(x, y, z)
+			const id = target.blockAt(x, y, z)
 			return id !== BLOCK.AIR && !FLUID_BLOCKS.includes(id)
 		},
-	}
+	})
+	// Rebuilt on a dimension change: the view wraps one world's voxels.
+	let targetView: VoxelView = targetViewOf(world)
 
 	const playSound = (name: string): void => {
 		audio.play(name)
@@ -380,24 +510,27 @@ async function boot(assets: GameAssets): Promise<void> {
 		const bz = Math.floor(z)
 		const previous = world.blockAt(bx, by, bz)
 		if (previous === BLOCK.AIR) return false
-		const definition = BLOCKS.tryById(previous)
+		const definition = BLOCKS_V2.tryById(previous)
 		// A negative hardness is the contract's "unbreakable", such as bedrock.
 		if (definition === undefined || definition.hardness < 0) return false
 		if (!world.setBlock(bx, by, bz, BLOCK.AIR)) return false
 		if (!isCreative(gameMode)) {
 			const itemId = definition.itemId ?? null
-			if (itemId !== null) addStack(player.inventory, makeStack(itemId, 1))
+			if (itemId !== null) addStack(player.inventory, makeStack(itemId, 1), V2_INVENTORY)
 		}
 		needsSectionSync = true
 		playSound(WOOD_BLOCKS.includes(previous) ? 'dig_wood' : 'dig_stone')
 		burstAt(bx, by, bz, PARTICLE.BlockBreak, BREAK_PARTICLES)
+		// A broken crop is a harvest, and an ore releases its experience.
+		if (isCrop(previous)) progression.harvest(farmWorld, player.inventory, bx, by, bz)
+		progression.blockBroken(bx, by, bz, previous)
 		if (isCrop(previous)) soundEvents.play(SOUND_EVENT.CropHarvest)
 		return true
 	}
 
 	const placeAt = (x: number, y: number, z: number, id: BlockId): boolean => {
 		if (id === BLOCK.AIR) return false
-		const definition = BLOCKS.tryById(id)
+		const definition = BLOCKS_V2.tryById(id)
 		if (definition === undefined) return false
 		const bx = Math.floor(x)
 		const by = Math.floor(y)
@@ -467,6 +600,88 @@ async function boot(assets: GameAssets): Promise<void> {
 			return
 		}
 		if (nearPortal(bx, by, bz)) soundEvents.play(SOUND_EVENT.PortalAmbient)
+	}
+
+	// --- dimensions ----------------------------------------------------------
+
+	/** Travel swapped the world: the renderer and the schedule follow it. */
+	const syncDimension = (): void => {
+		const next = dimensions.world
+		if (next === world) return
+		world = next
+		targetView = targetViewOf(world)
+		player.retarget(world)
+		for (const key of [...requested.keys()]) {
+			requested.delete(key)
+			pool.cancel(key)
+			renderer.removeSection(key)
+		}
+		needsSectionSync = true
+		soundEvents.play(SOUND_EVENT.PortalAmbient)
+	}
+
+	/** Sim ticks the app owns: crop growth, orb ageing and portal travel. */
+	let lastSimTick = player.tick
+	let lastSentTick = player.tick
+	const runSim = (limit: number): void => {
+		let steps = 0
+		while (lastSimTick < player.tick && steps < limit) {
+			lastSimTick += 1
+			steps += 1
+			progression.tick(farmWorld, lastSimTick)
+			dimensions.tick()
+			syncDimension()
+		}
+		// A long stall must not replay thousands of ticks on the next frame.
+		if (player.tick - lastSimTick > limit) lastSimTick = player.tick
+	}
+
+	/** INPUT_BIT mask of this frame, which is what the server speaks. */
+	const inputBits = (): number => {
+		let bits = touchBits
+		if (pressed.has('KeyW')) bits |= INPUT_BIT.Forward
+		if (pressed.has('KeyS')) bits |= INPUT_BIT.Back
+		if (pressed.has('KeyA')) bits |= INPUT_BIT.Left
+		if (pressed.has('KeyD')) bits |= INPUT_BIT.Right
+		if (pressed.has('Space')) bits |= INPUT_BIT.Jump
+		if (pressed.has('ShiftLeft') || pressed.has('ShiftRight')) bits |= INPUT_BIT.Sprint
+		if (pressed.has('ControlLeft') || pressed.has('ControlRight')) bits |= INPUT_BIT.Sneak
+		return bits
+	}
+
+	/**
+	 * Right click. The targeted block gets first refusal: an enchanting table
+	 * opens its screen, a hoe tills soil and seeds are planted. Anything else
+	 * falls back to placing the held block.
+	 */
+	const useTargeted = (): void => {
+		const hit = targeted()
+		if (hit === null) return
+		const bx = hit.block.x
+		const by = hit.block.y
+		const bz = hit.block.z
+		if (world.blockAt(bx, by, bz) === BLOCK_V2.ENCHANTING_TABLE) {
+			progression.openTable(farmWorld, player.inventory, bx, by, bz)
+			screen = 'enchanting'
+			soundEvents.play(SOUND_EVENT.EnchantStart)
+			return
+		}
+		const held = heldStack(player.inventory)
+		if (progression.till(farmWorld, bx, by, bz, held)) {
+			needsSectionSync = true
+			return
+		}
+		if (held !== null) {
+			const px = bx + hit.normal.x
+			const py = by + hit.normal.y
+			const pz = bz + hit.normal.z
+			if (progression.plant(farmWorld, px, py, pz, held.item)) {
+				if (!isCreative(gameMode)) removeItem(player.inventory, held.item, 1)
+				needsSectionSync = true
+				return
+			}
+		}
+		placeTargeted()
 	}
 
 	// --- section streaming --------------------------------------------------
@@ -546,7 +761,10 @@ async function boot(assets: GameAssets): Promise<void> {
 	const saveWorld = (): Promise<void> => {
 		if (saving !== null) return saving
 		const run = async (): Promise<void> => {
-			const chunks = world.savePayloads()
+			// Only the Overworld is persisted, so a save while in the Nether must
+			// not write its regenerated chunks over the saved ones.
+			const overworld = dimensions.worldOf(DIMENSION.Overworld)
+			const chunks = overworld.savePayloads()
 			await persistence.save({
 				meta: createSaveMeta({
 					worldId,
@@ -554,7 +772,7 @@ async function boot(assets: GameAssets): Promise<void> {
 					seed,
 					createdAt: meta?.createdAt,
 					gameMode,
-					generatorVersion: world.generator.version,
+					generatorVersion: overworld.generator.version,
 				}),
 				player: player.save(),
 				settings,
@@ -617,6 +835,7 @@ async function boot(assets: GameAssets): Promise<void> {
 			screen = screen === 'inventory' ? 'playing' : 'inventory'
 		},
 		onCloseScreen(): void {
+			if (screen === 'enchanting') progression.closeTable()
 			screen = 'playing'
 		},
 		onResume(): void {
@@ -667,11 +886,17 @@ async function boot(assets: GameAssets): Promise<void> {
 		},
 		onMoveStack(from: number, to: number): void {
 			// Pick the stack up, then put it down: the cursor is the UI's clipboard.
-			swapCursorWithSlot(player.inventory, from)
-			swapCursorWithSlot(player.inventory, to)
+			swapCursorWithSlot(player.inventory, from, V2_INVENTORY)
+			swapCursorWithSlot(player.inventory, to, V2_INVENTORY)
 		},
 		onPlaySound(name: string): void {
 			playSound(name)
+		},
+		onTakeEnchantOffer(slot: number): void {
+			progression.takeOffer(player.inventory, slot)
+		},
+		onToggleMultiplayer(): void {
+			multiplayer.toggle()
 		},
 		onTouchInput(bits: number): void {
 			touchBits = bits
@@ -682,7 +907,7 @@ async function boot(assets: GameAssets): Promise<void> {
 			player.pitch = Math.max(-PITCH_LIMIT, Math.min(PITCH_LIMIT, player.pitch + delta.pitch))
 		},
 		onTouchUse(): void {
-			if (screen === 'playing') placeTargeted()
+			if (screen === 'playing') useTargeted()
 		},
 		onTouchAttack(active: boolean): void {
 			touchAttack = active
@@ -720,6 +945,11 @@ async function boot(assets: GameAssets): Promise<void> {
 				debug,
 				settings,
 				worlds,
+				xp: progression.xpInfo(),
+				dimension: dimensions.label(),
+				farm: progression.farmInfo(),
+				multiplayer: multiplayer.status(),
+				enchanting: progression.enchantInfo(player.inventory),
 			}),
 		)
 	}
@@ -766,7 +996,7 @@ async function boot(assets: GameAssets): Promise<void> {
 			void canvas.requestPointerLock()
 			return
 		}
-		if (event.button === 2) placeTargeted()
+		if (event.button === 2) useTargeted()
 		else breakTargeted()
 	})
 	canvas.addEventListener('contextmenu', (event) => {
@@ -816,6 +1046,19 @@ async function boot(assets: GameAssets): Promise<void> {
 		readMove()
 		if (touchAttack && screen === 'playing') mineHeld(dt)
 		player.advance(dt * 1000)
+		runSim(SIM_CATCHUP_LIMIT)
+		progression.collectAt(player.x, player.y, player.z)
+		multiplayer.tick(now)
+		if (player.tick !== lastSentTick) {
+			lastSentTick = player.tick
+			multiplayer.sendInput({
+				tick: player.tick,
+				bits: inputBits(),
+				yaw: player.yaw,
+				pitch: player.pitch,
+				hotbar: player.inventory.selectedHotbar,
+			})
+		}
 
 		if (
 			world.stream(
@@ -926,6 +1169,83 @@ async function boot(assets: GameAssets): Promise<void> {
 		},
 		hash(): number {
 			return world.stateHash()
+		},
+		xp(): VcXpInfo {
+			return progression.xpInfo()
+		},
+		farm(): VcFarmInfo {
+			return progression.farmInfo()
+		},
+		dimension(): VcDimensionInfo {
+			return { id: dimensions.current, label: dimensions.label() }
+		},
+		enchanting(): VcEnchantInfo {
+			const info = progression.enchantInfo(player.inventory)
+			return {
+				open: info !== null,
+				bookshelves: info?.bookshelves ?? 0,
+				offers: info?.offers.length ?? 0,
+			}
+		},
+		net(): VcNetInfo {
+			return multiplayer.status()
+		},
+		advanceTicks(count: number): number {
+			const steps = Math.max(0, Math.min(Math.floor(count), MAX_ADVANCE_TICKS))
+			const target = player.tick + steps
+			// One tick per step. The runner may clamp a single long catch-up, so
+			// this walks to the target instead of trusting one big advance.
+			let guard = steps * 4 + 16
+			while (player.tick < target && guard > 0) {
+				guard -= 1
+				player.advance(1000 / NET.tickHz)
+				runSim(SIM_CATCHUP_LIMIT)
+			}
+			return player.tick
+		},
+		teleport(x: number, y: number, z: number): void {
+			player.teleport(x, y, z)
+			needsSectionSync = true
+		},
+		till(x: number, y: number, z: number): boolean {
+			// The kit's hoe, put in hand the way the inventory screen would.
+			const hoe = makeStack(FARMING.hoeItem, 1)
+			setHeldStack(player.inventory, hoe)
+			return progression.till(farmWorld, x, y, z, hoe)
+		},
+		plant(x: number, y: number, z: number): boolean {
+			return progression.plant(farmWorld, x, y, z, ITEM_V2.WHEAT_SEEDS)
+		},
+		harvest(x: number, y: number, z: number): number {
+			return progression.harvest(farmWorld, player.inventory, x, y, z).length
+		},
+		buildPortal(): VcPos {
+			const base = {
+				x: Math.floor(player.x) + 2,
+				y: Math.floor(player.y),
+				z: Math.floor(player.z),
+			}
+			dimensions.buildFrame(dimensions.current, base)
+			needsSectionSync = true
+			// The frame opening, which is where travel is detected.
+			const inside = { x: base.x + 1.5, y: base.y + 1, z: base.z + 0.5 }
+			player.teleport(inside.x, inside.y, inside.z)
+			return inside
+		},
+		xpFromOre(): number {
+			// The real path: breaking an ore drops orbs, which are then collected.
+			let ore: BlockId | null = null
+			for (let id = 1; id < BLOCK_V2.NETHERRACK && ore === null; id += 1) {
+				if (isOreBlock(id as BlockId)) ore = id as BlockId
+			}
+			if (ore === null) return 0
+			const bx = Math.floor(player.x)
+			const by = Math.floor(player.y) + 2
+			const bz = Math.floor(player.z)
+			world.setBlock(bx, by, bz, ore)
+			needsSectionSync = true
+			breakAt(bx, by, bz)
+			return progression.collectAt(bx + 0.5, by + 0.5, bz + 0.5)
 		},
 		errors,
 	}

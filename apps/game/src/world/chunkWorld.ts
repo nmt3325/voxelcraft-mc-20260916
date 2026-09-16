@@ -21,6 +21,7 @@ import {
 	CHUNK_X,
 	CHUNK_Y,
 	CHUNK_Z,
+	DIMENSION,
 	SEA_LEVEL,
 	SECTIONS_PER_CHUNK,
 	SECTION_Y,
@@ -33,6 +34,7 @@ import {
 	type ChunkData,
 	type ChunkPos,
 	type ColumnSample,
+	type DimensionId,
 	type MeshRequest,
 	type VoxelEditView,
 	type WorldGenerator,
@@ -48,6 +50,7 @@ import {
 } from '@voxelcraft/gameplay'
 import {
 	createSimVoxelWorld,
+	dimCreatePropsOf,
 	fluidCreateEngine,
 	lightCreateEngine,
 	lightPropsOf,
@@ -67,6 +70,8 @@ export interface ChunkStoreSource {
 export interface ChunkWorldOptions {
 	seed: number
 	source?: ChunkStoreSource
+	/** Dimension this world generates and lights. Defaults to the Overworld. */
+	dimension?: DimensionId
 }
 
 export interface SectionRef {
@@ -127,6 +132,7 @@ export function chunkDistance(ax: number, az: number, bx: number, bz: number): n
 
 export class ChunkWorld {
 	readonly seed: number
+	readonly dimension: DimensionId
 	readonly generator: WorldGenerator
 	readonly voxels: SimVoxelWorld
 	readonly light: LightEngineInstance
@@ -146,9 +152,15 @@ export class ChunkWorld {
 	constructor(options: ChunkWorldOptions) {
 		this.seed = options.seed >>> 0
 		this.source = options.source ?? null
-		this.generator = createWorldGenerator(this.seed)
+		this.dimension = options.dimension ?? DIMENSION.Overworld
+		this.generator = createWorldGenerator(this.seed, this.dimension)
 		this.voxels = createSimVoxelWorld()
-		this.light = lightCreateEngine({ world: this.voxels })
+		// Optics of this dimension: the v2 emissions the frozen v1 table does not
+		// know, and no sky light at all where the dimension has no sky.
+		this.light = lightCreateEngine({
+			world: this.voxels,
+			propsOf: dimCreatePropsOf(this.dimension),
+		})
 		this.fluids = fluidCreateEngine({ world: this.voxels })
 
 		const voxels = this.voxels
@@ -189,6 +201,20 @@ export class ChunkWorld {
 
 	get loadedChunks(): number {
 		return this.voxels.chunks.size
+	}
+
+	/**
+	 * Generates and decorates the chunk holding a world column, including the
+	 * 3x3 terrain neighbourhood `decorate` needs. Portal travel calls this
+	 * before it looks for a landing spot in the destination dimension.
+	 */
+	ensureColumnAt(wx: number, wz: number): void {
+		const cx = worldToChunk(Math.floor(wx))
+		const cz = worldToChunk(Math.floor(wz))
+		for (let dz = -1; dz <= 1; dz++) {
+			for (let dx = -1; dx <= 1; dx++) this.generateTerrain(cx + dx, cz + dz)
+		}
+		this.decorate(cx, cz)
 	}
 
 	/** Bedrock, stone, biome surface, ocean, caves and ores for one chunk. */
