@@ -127,6 +127,41 @@ describe('createChunkStreamer', () => {
 		expect(keys(streamer.next(PLAYER, 2 * TICK_MS))).toEqual(['100,100'])
 	})
 
+	it('re-sends a column the player walked away from and came back to', () => {
+		const streamer = createChunkStreamer({ radius: 0, chunksPerSecond: 1000, maxBurst: 4 })
+		streamer.track(PLAYER, 0, 0)
+		streamer.next(PLAYER, 0)
+		expect(keys(streamer.next(PLAYER, 1000))).toEqual(['0,0'])
+		// Out of range: the client is free to drop the column, so the server must
+		// forget it rather than block the re-send for the whole session.
+		streamer.recenter(PLAYER, 5, 0)
+		expect(keys(streamer.next(PLAYER, 2000))).toEqual(['5,0'])
+		streamer.recenter(PLAYER, 0, 0)
+		expect(keys(streamer.next(PLAYER, 3000))).toEqual(['0,0'])
+	})
+
+	it('forgets only the columns that actually left the radius', () => {
+		const streamer = createChunkStreamer({ radius: 1, chunksPerSecond: 1000, maxBurst: 9 })
+		streamer.track(PLAYER, 0, 0)
+		streamer.next(PLAYER, 0)
+		expect(streamer.next(PLAYER, 1000)).toHaveLength(9)
+		streamer.recenter(PLAYER, 1, 0)
+		expect(keys(streamer.next(PLAYER, 2000))).toEqual(['2,0', '2,-1', '2,1'])
+		// Walking back only re-sends the three columns the step above dropped.
+		streamer.recenter(PLAYER, 0, 0)
+		expect(keys(streamer.next(PLAYER, 3000))).toEqual(['-1,0', '-1,-1', '-1,1'])
+	})
+
+	it('never hands over more than the work budget it was given', () => {
+		const streamer = createChunkStreamer({ radius: 1, chunksPerSecond: 1000, maxBurst: 9 })
+		streamer.track(PLAYER, 0, 0)
+		streamer.next(PLAYER, 0)
+		expect(keys(streamer.next(PLAYER, 1000, 2))).toEqual(['0,0', '-1,0'])
+		expect(streamer.next(PLAYER, 1000, 0)).toEqual([])
+		// The deferred columns are still queued: a budget is not a loss.
+		expect(streamer.next(PLAYER, 2000, 100)).toHaveLength(7)
+	})
+
 	it('forgets everything it knew about a player', () => {
 		const streamer = createChunkStreamer({ radius: 1, chunksPerSecond: 1000, maxBurst: 9 })
 		streamer.track(PLAYER, 0, 0)
