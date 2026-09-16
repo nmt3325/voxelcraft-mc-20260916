@@ -12,17 +12,17 @@ const generatedDir = fileURLToPath(new URL('../../packages/assets-gen/generated'
 const hasGeneratedAssets = existsSync(`${generatedDir}/atlas.json`)
 
 export default defineConfig({
-  base: './',
-  publicDir: hasGeneratedAssets ? generatedDir : false,
-  define: { __VC_HAS_ASSETS__: JSON.stringify(hasGeneratedAssets) },
-  build: {
-    outDir: fileURLToPath(new URL('../../dist', import.meta.url)),
-    emptyOutDir: true,
-    target: 'es2022',
-    sourcemap: false,
-    chunkSizeWarningLimit: 2048,
-  },
-  server: { host: '127.0.0.1', port: 5173, strictPort: true },
-  preview: { host: '127.0.0.1', port: 4173, strictPort: true },
-  worker: { format: 'es' },
+	base: './',
+	publicDir: hasGeneratedAssets ? generatedDir : false,
+	define: { __VC_HAS_ASSETS__: JSON.stringify(hasGeneratedAssets) },
+	build: {
+		outDir: fileURLToPath(new URL('../../dist', import.meta.url)),
+		emptyOutDir: true,
+		target: 'es2022',
+		sourcemap: false,
+		chunkSizeWarningLimit: 2048,
+	},
+	server: { host: '127.0.0.1', port: 5173, strictPort: true },
+	preview: { host: '127.0.0.1', port: 4173, strictPort: true },
+	worker: { format: 'es' },
 })

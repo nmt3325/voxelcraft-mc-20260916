@@ -99,9 +99,22 @@ interface VcState {
 	renderDistance: number
 }
 
+/** Mesher pool telemetry, so e2e can prove meshing really ran in a worker. */
+interface VcMesherStats {
+	workers: number
+	inline: number
+	worker: number
+	meshed: number
+	skipped: number
+	errors: number
+	requested: number
+	pending: number
+}
+
 interface VcTestApi {
 	ready: Promise<void>
 	state(): VcState
+	mesher(): VcMesherStats
 	getBlock(x: number, y: number, z: number): number
 	breakBlock(x: number, y: number, z: number): void
 	placeBlock(x: number, y: number, z: number, id: number): void
@@ -253,9 +266,10 @@ async function boot(assets: GameAssets): Promise<void> {
 	})
 	renderer.camera.rotation.order = 'YXZ'
 
-	// Workers are skipped under test so a worker load failure can never turn into
-	// a console error; meshing then happens inline on the main thread.
-	const pool: MesherPool = createMesherPool({ inline: testMode })
+	// Workers run under test too, and the e2e suite asserts that meshing really
+	// goes through them. `workers=0` opts out so the inline fallback stays testable.
+	const inlineMeshing = params.get('workers') === '0'
+	const pool: MesherPool = createMesherPool({ inline: inlineMeshing })
 	const audio: AudioHandle = createAudio({
 		manifest: assets.sounds,
 		baseUrl: './',
@@ -728,6 +742,19 @@ async function boot(assets: GameAssets): Promise<void> {
 				fps: Math.round(stats.fps),
 				tick: player.tick,
 				renderDistance: renderer.getRenderDistance(),
+			}
+		},
+		mesher(): VcMesherStats {
+			const mesh = pool.stats()
+			return {
+				workers: mesh.workers,
+				inline: mesh.inlineMeshed,
+				worker: mesh.workerMeshed,
+				meshed: mesh.meshed,
+				skipped: mesh.skipped,
+				errors: mesh.errors,
+				requested: mesh.requested,
+				pending: mesh.pending,
 			}
 		},
 		getBlock(x: number, y: number, z: number): number {
