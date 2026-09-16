@@ -1,114 +1,129 @@
 /**
- * Typed-array FIFO used by the light BFS.
+ * Flat FIFO of light BFS records, backed by one growable `Int32Array`.
  *
- * The first implementation pushed four numbers per record onto a plain
- * `number[]` and walked it with a read index. Seeding a 15x15 chunk world
- * enqueues millions of records, and in the H-05 profile the array growth plus
- * the boxed element writes were the single largest cost of `stitchBoundaries`.
+ * The engine used to queue records by pushing four or five numbers onto a
+ * `number[]`. At H-05 scale that is the single biggest allocator in the light
+ * path: a 225 chunk stitch pass queued millions of records, and a JS array of
+ * doubles costs 8 bytes per slot plus repeated backing store reallocation.
  *
- * This queue stores the same four fields in a growable `Int32Array`, reuses the
- * backing buffer across chunks, and compacts the consumed prefix before it ever
- * reallocates. `shift()` writes the popped record into plain instance fields so
- * a drain loop touches no objects at all.
+ * Every record is five int32 slots, `x, y, z, level, face`:
+ *  - re-propagation records only use `face`, the cursor that lets `step` resume
+ *    a half-processed voxel at the same neighbour on the next tick,
+ *  - removal records also carry `level`, the brightness that used to be there.
  *
- * The fourth field is the traversal face for spread queues and the removed
- * light level for removal queues; both users are in this package.
+ * `peek` loads the head record into fields without consuming it, which is what
+ * makes budget suspension expressible: overwrite the cursor with `setFace` and
+ * stop, and the next `step` resumes exactly where this one stopped.
  */
-
-/** Numbers per queued record: x, y, z, arg. */
-const SLOTS = 4
-
-/** Records reserved up front. One chunk seed frontier fits comfortably. */
+const SLOTS = 5
 const DEFAULT_RECORDS = 1024
 
 export class LightQueue {
-	/** Packed records, `SLOTS` numbers each. */
-	private buffer: Int32Array
-	/** Read cursor, in numbers. */
-	private readAt = 0
-	/** Write cursor, in numbers. */
-	private writeAt = 0
+	private data: Int32Array
+	/** Record index of the next record to read. */
+	private head = 0
+	/** Record index one past the last written record. */
+	private tail = 0
 
-	/** X of the record last returned by `shift()`. */
+	/** Fields of the record loaded by the last `peek`. */
 	x = 0
-	/** Y of the record last returned by `shift()`. */
 	y = 0
-	/** Z of the record last returned by `shift()`. */
 	z = 0
-	/** Face (spread queues) or removed level (removal queues) of that record. */
-	arg = 0
+	/** Brightness that used to be at this voxel. Removal records only. */
+	level = 0
+	/** Neighbour cursor, 0..6. */
+	face = 0
 
-	constructor(capacityRecords: number = DEFAULT_RECORDS) {
-		const records = capacityRecords > 0 ? capacityRecords : DEFAULT_RECORDS
-		this.buffer = new Int32Array(records * SLOTS)
+	constructor(records: number = DEFAULT_RECORDS) {
+		this.data = new Int32Array(Math.max(1, records) * SLOTS)
 	}
 
-	/** Records still waiting to be read. */
 	get size(): number {
-		return (this.writeAt - this.readAt) / SLOTS
+		return this.tail - this.head
 	}
 
 	get isEmpty(): boolean {
-		return this.readAt >= this.writeAt
+		return this.head >= this.tail
 	}
 
-	/** Records the buffer can hold without growing. Only used by tests. */
+	/** Records that fit without growing. */
 	get capacity(): number {
-		return this.buffer.length / SLOTS
+		return (this.data.length / SLOTS) | 0
 	}
 
-	/** Drops every pending record and rewinds both cursors. Keeps the buffer. */
 	clear(): void {
-		this.readAt = 0
-		this.writeAt = 0
+		this.head = 0
+		this.tail = 0
 	}
 
-	push(x: number, y: number, z: number, arg: number): void {
-		if (this.writeAt + SLOTS > this.buffer.length) this.reserve()
-		const buffer = this.buffer
-		let at = this.writeAt
-		buffer[at++] = x
-		buffer[at++] = y
-		buffer[at++] = z
-		buffer[at++] = arg
-		this.writeAt = at
+	/** Queues a re-propagation source. */
+	pushAdd(x: number, y: number, z: number): void {
+		this.push(x, y, z, 0)
 	}
 
-	/**
-	 * Pops the oldest record into `x` / `y` / `z` / `arg`.
-	 * Returns `false` when the queue is empty, leaving the fields untouched.
-	 */
-	shift(): boolean {
-		const at = this.readAt
-		if (at >= this.writeAt) return false
-		const buffer = this.buffer
-		this.x = buffer[at]
-		this.y = buffer[at + 1]
-		this.z = buffer[at + 2]
-		this.arg = buffer[at + 3]
-		this.readAt = at + SLOTS
+	/** Queues a removal, carrying the brightness being removed. */
+	pushRemove(x: number, y: number, z: number, level: number): void {
+		this.push(x, y, z, level)
+	}
+
+	/** Loads the head record into the fields. False when the queue is empty. */
+	peek(): boolean {
+		if (this.head >= this.tail) return false
+		const at = this.head * SLOTS
+		const data = this.data
+		this.x = data[at]
+		this.y = data[at + 1]
+		this.z = data[at + 2]
+		this.level = data[at + 3]
+		this.face = data[at + 4]
 		return true
 	}
 
 	/**
-	 * Makes room for at least one more record.
-	 *
-	 * A drain walks the buffer front to back, so the consumed prefix is normally
-	 * the bulk of it: compacting is enough and no allocation happens. Only a
-	 * queue that really is more than half live doubles.
+	 * Overwrites the head record's neighbour cursor, so a voxel suspended on a
+	 * spent budget resumes at the same face instead of redoing earlier faces.
+	 */
+	setFace(face: number): void {
+		if (this.head >= this.tail) return
+		this.data[this.head * SLOTS + 4] = face
+	}
+
+	/** Consumes the head record. */
+	advance(): void {
+		this.head++
+		if (this.head >= this.tail) {
+			this.head = 0
+			this.tail = 0
+		}
+	}
+
+	private push(x: number, y: number, z: number, level: number): void {
+		if (this.tail === this.capacity) this.reserve()
+		const at = this.tail * SLOTS
+		const data = this.data
+		data[at] = x
+		data[at + 1] = y
+		data[at + 2] = z
+		data[at + 3] = level
+		data[at + 4] = 0
+		this.tail++
+	}
+
+	/**
+	 * Reclaims the consumed prefix first, and only doubles when the live records
+	 * really do fill the buffer. A BFS drains as it pushes, so in practice this
+	 * keeps the buffer at the high water mark of *live* records rather than of
+	 * total records ever queued.
 	 */
 	private reserve(): void {
-		const live = this.writeAt - this.readAt
-		if (this.readAt > 0 && live + SLOTS <= this.buffer.length) {
-			this.buffer.copyWithin(0, this.readAt, this.writeAt)
-			this.readAt = 0
-			this.writeAt = live
-			return
+		if (this.head > 0) {
+			this.data.copyWithin(0, this.head * SLOTS, this.tail * SLOTS)
+			this.tail -= this.head
+			this.head = 0
+			if (this.tail < this.capacity) return
 		}
-		const next = new Int32Array(this.buffer.length * 2)
-		next.set(this.buffer.subarray(this.readAt, this.writeAt))
-		this.buffer = next
-		this.readAt = 0
-		this.writeAt = live
+		const grown = new Int32Array(this.data.length * 2)
+		grown.set(this.data)
+		this.data = grown
 	}
 }
