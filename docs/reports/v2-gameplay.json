@@ -1,0 +1,90 @@
+{
+  "task": "L1-G gameplay subtree for run mc-20260916: experience, enchanting, farming and breeding rules in packages/gameplay",
+  "branch": "feat/mc-20260916/v2-gameplay",
+  "status": "ok",
+  "base_sha": "965d7cb4b76414e418627011e10b87f9655f84b6",
+  "head_sha": "ba04d08ae367865e3eac0839629b0770f2d9e35a",
+  "commits": [
+    { "sha": "e946ec39c3c12a6b9dca59bed8c9f2a09088b13a", "message": "feat(gameplay): xp state, level curve and experience orbs" },
+    { "sha": "a65d573400594c557fc1628cd712d65ed3a32e98", "message": "feat(gameplay): xp gains from ore, mobs, smelting and breeding" },
+    { "sha": "7a510d0f5a38d9f72333afc909d09eec407647c9", "message": "feat(gameplay): farmland hydration and crop growth" },
+    { "sha": "b68a035e7faa7a3f07d34465ee50f3c39263a42f", "message": "feat(gameplay): enchanting table offers and applied effects" },
+    { "sha": "fc1d815ac7f82b9886c6d56f95ee81de25d74aab", "message": "feat(gameplay): v2 item definitions and harvest recipes" },
+    { "sha": "ba04d08ae367865e3eac0839629b0770f2d9e35a", "message": "feat(gameplay): animal breeding rules and baby growth" }
+  ],
+  "files_changed": [
+    "packages/gameplay/src/index.ts",
+    "packages/gameplay/src/experience/xp.ts",
+    "packages/gameplay/src/experience/orbs.ts",
+    "packages/gameplay/src/experience/sources.ts",
+    "packages/gameplay/src/experience/index.ts",
+    "packages/gameplay/src/experience/experience.test.ts",
+    "packages/gameplay/src/experience/sources.test.ts",
+    "packages/gameplay/src/enchanting/enchantments.ts",
+    "packages/gameplay/src/enchanting/offers.ts",
+    "packages/gameplay/src/enchanting/effects.ts",
+    "packages/gameplay/src/enchanting/index.ts",
+    "packages/gameplay/src/enchanting/enchanting.test.ts",
+    "packages/gameplay/src/farming/farmland.ts",
+    "packages/gameplay/src/farming/crops.ts",
+    "packages/gameplay/src/farming/index.ts",
+    "packages/gameplay/src/farming/farming.test.ts",
+    "packages/gameplay/src/breeding/breeding.ts",
+    "packages/gameplay/src/breeding/index.ts",
+    "packages/gameplay/src/breeding/breeding.test.ts",
+    "packages/gameplay/src/v2items/itemDefsV2.ts",
+    "packages/gameplay/src/v2items/recipesV2.ts",
+    "packages/gameplay/src/v2items/index.ts",
+    "packages/gameplay/src/v2items/v2items.test.ts",
+    "docs/reports/v2-gameplay.json"
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "cc8a0fea6e1348f6",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "no diagnostics; all 10 workspace projects typecheck clean"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "8253ae9f1ae14041",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "eslint Done in core-types, world, sim, gameplay, client, assets-gen, apps/game, tests/e2e, tests/bench; 0 errors 0 warnings"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "d5cee0297d7b40ef",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "whole workspace green; packages/gameplay 16 test files / 209 tests passed (147 before this task, 62 new); apps/game 2 files / 9 tests passed"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "8fb12d3ad452431b",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets generated, vite build ok: 167 modules, dist/assets/index-CDB2nz8D.js 680.98 kB (gzip 184.60 kB), built in 1.10s"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": [
+    "Scope delivered in full: experience (orbs with frozen merge/pickup radii and lifetime, level curve levelFromTotalXp plus reverse lookup, gains from ore breaking, mob kills, smelting and breeding, xp.changed event), enchanting (deterministic three-slot offers from seed/bookshelves/slot with enchantLevelCost, lapisPerSlot costs, max levels and the Fortune-vs-SilkTouch conflict, effects wired into break time, drops, durability, melee/arrow damage and damage reduction), farming (hoe tilling of dirt/grass, hydration inside radius 4, eight-stage random-tick growth with minLight 9, trampling, seed and produce drops) and breeding (love mode via BREED_FOOD inside partner radius 8, baby with scale 0.5 and speed factor 1.15, growth at 24000 ticks, parent cooldown 6000 ticks, xpOnBreed 4).",
+    "All frozen v1.1.0 contract values were consumed from packages/core-types and never redefined or edited. New items stay inside the ITEM_V2 band 305-322 and the five new recipes go through the existing recipe registry via createV2RecipeRegistry; v1 ITEM_DEFS, ITEM_DEF_COUNT, BLOCK_DEF_COUNT and the default registries are untouched so the existing count assertions still hold.",
+    "Determinism: offers, crop growth rolls, fortune rolls and baby ids all derive from the frozen hash helpers (hashU32/hash01) with no Math.random, Date.now or wall clock. Determinism tests were kept and never cut.",
+    "Cross-package boundaries respected: nothing outside packages/gameplay was modified. Entity movement and AI stay in the sim package; breeding exposes Animal/Herd state plus scaleOf and speedFactorOf instead of reaching into it, and farming/enchanting declare small local FarmWorld/EnchantWorld interfaces.",
+    "Barrel integration is L1-G only. Two genuine name clashes surfaced when re-exporting the new folders from packages/gameplay/src/index.ts and were resolved there: isReplaceable (redstone keeps the plain name, farming is exposed as isFarmReplaceable) and fortuneBonus (enchanting keeps the plain name, farming is exposed as cropFortuneBonus).",
+    "Work split across three L2 children, each restricted to its own folder: enchanting; farming and crops; breeding plus the v2 item defs and recipes. L1-G implemented the whole experience module itself and performed every git and integration step; children ran no git commands and created no environments.",
+    "gha mcp observations for the tracker: (1) write_file does not honour the sticky execute cwd, so a relative path resolved against the env work root while still returning ok/created true - absolute paths are required; (2) re-running an identical gate command string returns the previous job with deduped true unless allow_duplicate is set, which can silently hide a fresh result; (3) three parallel Notion spawnSession calls in one turn had two rejected as invalid while the first succeeded, so children had to be spawned one per turn.",
+    "Nothing from the cut list was dropped: all listed enchantment effects, all three crops and the full breeding polish are implemented."
+  ]
+}
