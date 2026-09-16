@@ -30,3 +30,18 @@ export {
 	type OrbPool,
 	type XpOrb,
 } from './orbs'
+export {
+	XP_AMOUNTS,
+	XP_ORE_BLOCKS,
+	dropBlockBreakXp,
+	dropBreedingXp,
+	dropMobKillXp,
+	dropSmeltXp,
+	isOreBlock,
+	xpForBlockBreak,
+	xpForBreeding,
+	xpForMobKill,
+	xpForSmelt,
+	type BlockBreakXpOptions,
+	type XpDrop,
+} from './sources'
