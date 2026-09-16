@@ -26,6 +26,13 @@ const OCEAN_CHUNKS: ReadonlyArray<{ seed: number; cx: number; cz: number }> = [
 	{ seed: 20260916, cx: -39, cz: -48 },
 ]
 
+/**
+ * `hashBuffer` of an all zero fluid buffer. Every golden entry pinned exactly
+ * this value before review R-02, so the `fluids` column held for any world
+ * generator, broken ones included.
+ */
+const EMPTY_FLUIDS_HASH = 1582341573
+
 function generate(seed: number, cx: number, cz: number) {
 	const blocks = new Uint16Array(CHUNK_VOLUME)
 	const fluids = new Uint8Array(CHUNK_VOLUME)
@@ -48,6 +55,28 @@ describe('golden chunks', () => {
 			}
 		})
 		expect(actual).toEqual(golden.entries)
+	})
+
+	it('pins chunks that actually contain water', () => {
+		// The constant really is the hash of an empty fluid buffer.
+		expect(hashBuffer(new Uint8Array(CHUNK_VOLUME))).toBe(EMPTY_FLUIDS_HASH)
+
+		const wet = golden.entries.filter((entry) => entry.fluids !== EMPTY_FLUIDS_HASH)
+		expect(wet.length, 'golden entries with a non empty fluid buffer').toBeGreaterThan(0)
+
+		for (const entry of wet) {
+			const where = `chunk ${entry.cx},${entry.cz} of seed ${entry.seed}`
+			const { blocks, fluids } = generate(entry.seed, entry.cx, entry.cz)
+			expect(hashBuffer(fluids), `fluids hash of ${where}`).toBe(entry.fluids)
+			let water = 0
+			let packed = 0
+			for (let i = 0; i < CHUNK_VOLUME; i++) {
+				if (blocks[i] === BLOCK.WATER) water++
+				if (fluids[i] !== 0) packed++
+			}
+			expect(water, `water voxels in ${where}`).toBeGreaterThan(0)
+			expect(packed, `packed fluid bytes in ${where}`).toBeGreaterThan(0)
+		}
 	})
 })
 
