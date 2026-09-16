@@ -20,16 +20,25 @@ third-party assets are bundled and every asset can be regenerated with `pnpm ass
 
 ```bash
 pnpm install
-pnpm assets      # generate the texture atlas and sound effects
-pnpm dev         # http://127.0.0.1:5173
+
+# generate the texture atlas and sound effects
+pnpm assets
+
+# serve the game on http://127.0.0.1:5173
+pnpm dev
 ```
 
 `pnpm build` writes a production bundle to `dist/`, and `pnpm preview` serves it.
 
+Each comment sits on its own line on purpose: a shell without `interactive_comments`
+enabled (plain `sh`, or a zsh that has not set it) hands a trailing `# ...` to the
+command as arguments, and `vite` then exits with `CACError: Unused args`.
+
 ### Optional: multiplayer server
 
 ```bash
-pnpm --filter @voxelcraft/server start   # ws://127.0.0.1:8787/ws
+# listens on ws://127.0.0.1:8787/ws
+pnpm --filter @voxelcraft/server start
 ```
 
 `apps/server` is authoritative: it validates movement against the walk budget, rejects
@@ -50,9 +59,13 @@ The wire format and its constants live in `@voxelcraft/net` (protocol version 1,
 | Place the held block | Right click |
 | Select a hotbar slot | `1` - `9` |
 | Inventory, 2x2 and 3x3 crafting | `E` |
-| Pause, go back, release the pointer | `Esc` |
+| Pause, release the mouse, or go back | `Esc` |
 | Debug overlay (fps, position, biome, chunks, draw calls) | `F3` |
 | Render distance, FOV, mouse sensitivity | Pause screen, then Settings |
+
+The pointer is released on every screen except the game itself, and a release the browser
+performs on its own -- `Esc` in Chrome and Safari, or switching apps on macOS -- pauses the
+game instead of leaving the look input running. Click the canvas to capture it again.
 
 Worlds are created and picked from the title screen; each world keeps its seed, so the same
 seed always regenerates the same terrain.
