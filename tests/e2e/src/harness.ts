@@ -71,6 +71,55 @@ export interface VcMesherStats {
 	pending: number
 }
 
+/** Particle pool telemetry, mirrored from `VcParticleStats` in apps/game. */
+export interface VcParticleStats {
+	alive: number
+	visible: number
+	drawCalls: number
+	capacity: number
+	spawnBudget: number
+}
+
+/** Experience the HUD paints, mirrored from `progression.xpInfo()`. */
+export interface VcXpInfo {
+	level: number
+	total: number
+	/** Fraction of the way to the next level, 0..1. */
+	progress: number
+	/** Uncollected orbs still lying in the world. */
+	orbs: number
+}
+
+/** Crop bookkeeping, mirrored from `progression.farmInfo()`. */
+export interface VcFarmInfo {
+	crops: number
+	mature: number
+}
+
+export interface VcDimensionInfo {
+	id: number
+	label: string
+}
+
+export interface VcEnchantInfo {
+	open: boolean
+	bookshelves: number
+	offers: number
+}
+
+export interface VcNetInfo {
+	enabled: boolean
+	state: string
+	players: number
+	address: string
+}
+
+export interface VcPos {
+	x: number
+	y: number
+	z: number
+}
+
 /** `window.__vc`, exposed by apps/game only when test=1. */
 export interface VcTestApi {
 	ready: Promise<void>
@@ -81,6 +130,23 @@ export interface VcTestApi {
 	placeBlock(x: number, y: number, z: number, id: number): void
 	save(): Promise<void>
 	hash(): number
+	particles(): VcParticleStats
+	xp(): VcXpInfo
+	farm(): VcFarmInfo
+	dimension(): VcDimensionInfo
+	enchanting(): VcEnchantInfo
+	net(): VcNetInfo
+	/** Runs whole simulation ticks. Returns the tick reached. */
+	advanceTicks(count: number): number
+	teleport(x: number, y: number, z: number): void
+	till(x: number, y: number, z: number): boolean
+	plant(x: number, y: number, z: number): boolean
+	/** Harvests a crop. Returns how many stacks it dropped. */
+	harvest(x: number, y: number, z: number): number
+	/** Builds a portal frame beside the player and steps into it. */
+	buildPortal(): VcPos
+	/** Breaks an ore and collects its orbs. Returns the experience gained. */
+	xpFromOre(): number
 	errors: string[]
 }
 
@@ -127,6 +193,46 @@ export async function waitForTestApi(page: Page, timeout = 30000): Promise<void>
 /** Awaits the app's own readiness promise (first geometry on screen). */
 export async function waitForReady(page: Page): Promise<void> {
 	await page.evaluate(() => (window as unknown as WindowWithVc).__vc.ready)
+}
+
+/** Boots the app in test mode at the e2e canvas size and waits for geometry. */
+export async function bootTestApp(page: Page, options: TestUrlOptions = {}): Promise<void> {
+	await page.setViewportSize({ width: PERF.e2eCanvasWidth, height: PERF.e2eCanvasHeight })
+	await page.goto(buildTestUrl(options))
+	await waitForTestApi(page)
+	await waitForReady(page)
+}
+
+/**
+ * Runs `count` simulation ticks in one step and returns the tick reached. The
+ * schedule is fixed step and every roll is a pure function of (seed, tick,
+ * position), so a tick budget is a deterministic amount of game time.
+ */
+export async function advanceTicks(page: Page, count: number): Promise<number> {
+	return page.evaluate(
+		(steps: number) => (window as unknown as WindowWithVc).__vc.advanceTicks(steps),
+		count,
+	)
+}
+
+export async function readXp(page: Page): Promise<VcXpInfo> {
+	return page.evaluate(() => (window as unknown as WindowWithVc).__vc.xp())
+}
+
+export async function readFarm(page: Page): Promise<VcFarmInfo> {
+	return page.evaluate(() => (window as unknown as WindowWithVc).__vc.farm())
+}
+
+export async function readDimension(page: Page): Promise<VcDimensionInfo> {
+	return page.evaluate(() => (window as unknown as WindowWithVc).__vc.dimension())
+}
+
+export async function readNet(page: Page): Promise<VcNetInfo> {
+	return page.evaluate(() => (window as unknown as WindowWithVc).__vc.net())
+}
+
+export async function readParticleStats(page: Page): Promise<VcParticleStats> {
+	return page.evaluate(() => (window as unknown as WindowWithVc).__vc.particles())
 }
 
 /** Current mesher telemetry of the running app. */
