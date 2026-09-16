@@ -1,0 +1,107 @@
+{
+	"task": "fix-f",
+	"branch": "feat/mc-20260916/fix-f",
+	"status": "blocked",
+	"base_sha": "40e1a3f5c6d35ad364af6e49a296a64756921850",
+	"head_sha": "89554349ac5b7f22705c881c48ff51b55fc12221",
+	"commits": [
+		{
+			"sha": "c75b9daa2c97a2d9e8abdf7ac01be1b0adf08d44",
+			"subject": "fix(server): never discard an accepted block edit in the world store"
+		},
+		{
+			"sha": "ef56c1a00276cbf0ee713563362bd3a959bafcc5",
+			"subject": "fix(bench): record the task that produced the run and gate every printed budget"
+		},
+		{
+			"sha": "89554349ac5b7f22705c881c48ff51b55fc12221",
+			"subject": "chore(bench): record baseline for fix-f"
+		}
+	],
+	"files_changed": [
+		"apps/server/src/types.ts",
+		"apps/server/src/world/worldStore.ts",
+		"apps/server/src/__tests__/worldStoreEdits.test.ts",
+		"apps/server/src/__tests__/worldStoreCap.test.ts",
+		"apps/server/src/__tests__/editBroadcast.test.ts",
+		"tests/bench/src/bench.ts",
+		"tests/bench/results/bench.json",
+		"docs/reports/fix-f.json"
+	],
+	"checks": [
+		{
+			"name": "install",
+			"command": "pnpm install --no-frozen-lockfile",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g1.log, 12 workspace projects, lockfile up to date"
+		},
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g2.log"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm lint",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 1,
+			"eof": true,
+			"log": "/tmp/gates2/g3.log, 2 errors, both pre-existing in scripts/wire-deps.cjs (no-require-imports at 3:12 and 4:14), zero problems in fix-f files; the same failure reproduces on the pristine base tree in job 4cfe885d5dd14aac with RC lint_base=1; pnpm -r lint exits 0 in job 7f73703d12e542af"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g4.log, 10 projects green, apps/server 13 files and 110 tests passed"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g5.log, 225 modules transformed"
+		},
+		{
+			"name": "size",
+			"command": "bash scripts/report-size.sh",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g6.log, TOTAL raw=1040207 gzip=452273"
+		},
+		{
+			"name": "e2e",
+			"command": "pnpm test:e2e",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g7.log, 13 playwright specs passed"
+		},
+		{
+			"name": "bench",
+			"command": "pnpm bench",
+			"job_id": "61d8d667975f4a19",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "/tmp/gates2/g8.log, task=fix-f, all five metrics ok, no warnings, no failures"
+		}
+	],
+	"contract_changes_needed": false,
+	"notes": "B-1 reproduced before the fix with a scratch driver (job 849531dc51634184, shipped config, 400 edits in 400 distinct columns): 400 accepted, 338 readable, 62 unreadable, first loss at index 338; the converse re-touch scenario left 400 resident columns against a cap of 338. After the fix (job 56f20c187f2b4126): 338 accepted, 62 refused, 0 unreadable, no first loss, 338 resident of a cap of 338. Fix: worldStore acquire() pins the column key before it inserts, makes room before the insert instead of after, never selects the column being written as a victim, and returns null when every resident column already holds an edit; clean reads through chunk() are still never refused; setBlock returns false and logs a loud refusal naming the coordinates and a running count, so gameServer skips the BlockChange broadcast for a refused edit, and the resident set never exceeds maxColumns (338 = STREAM_WINDOW_COLUMNS times 2). The regression tests worldStoreEdits, worldStoreCap and editBroadcast were shown to have power in job 1e037b1a651d4e5f: with the old ordering restored they went red, RC 1, four failures (62 stale readbacks starting at index 338, setBlock returning true for a write it could not retain, 400 resident over a cap of 338, and a BlockChange broadcast for a refused edit); after restoring the fixed file (sha256 ac5171b6f9ac5773bf980db6a658a6dbd1cc330b74f9d918d3043fdb2a65d92d) they went green, RC 0. Bench honesty: task now resolves from BENCH_TASK or the git branch leaf and is recorded with taskSource plus git branch, commit and dirty instead of the hard-coded fix-c; lightSeedAvgMs is gated against BENCH_LOCAL.lightSeedAvgMsMax of 8 ms labelled bench-local rather than the chunk generation budget; sectionMeshAvgMs is now a compared metric against the frozen PERF.sectionMeshBudgetMs of 1.5 ms and the uncompared informational block is gone, so every printed budget belongs to a measurement that is actually compared. Existing measured metrics and the failFactor semantics are unchanged and packages/core-types was not touched. The committed tests/bench/results/bench.json is the output of the pnpm bench run in job 7f73703d12e542af on a clean tree at ef56c1a00276cbf0ee713563362bd3a959bafcc5, which the file itself records in git.commit with dirty false. Status is blocked for one reason only: gate 3, pnpm lint, is root eslint . and fails on scripts/wire-deps.cjs, a path that is off limits for fix-f, and it fails identically on the untouched base tree at 40e1a3f5c6d35ad364af6e49a296a64756921850 (job 4cfe885d5dd14aac); rev6 recorded gate 3 as pnpm -r lint, which exits 0 on this branch (job 7f73703d12e542af). Either allow an edit to scripts/wire-deps.cjs or eslint.config.js, or run gate 3 in the recursive form. head_sha is the commit every recorded check ran on; the commit that adds this report sits on top of it and changes nothing executable."
+}

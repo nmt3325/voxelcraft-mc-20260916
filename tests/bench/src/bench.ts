@@ -4,6 +4,7 @@
  * packages/client mesher, and the sim tick runs the real ECS schedule. No
  * bench fixtures are substituted for those systems any more.
  */
+import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -286,6 +287,63 @@ function benchSimTick(): TickSummary {
 	}
 }
 
+/** Where this file lives: used for git lookups and for the results directory. */
+const HERE = dirname(fileURLToPath(import.meta.url))
+
+/** Where a budget comes from: the frozen contract, or this harness. */
+type BudgetSource = 'contract' | 'bench-local'
+
+/**
+ * Budgets the contract does not freeze, so the bench owns them and says so.
+ * Borrowing another metric's budget is what made the old lightSeedAvgMs gate
+ * dishonest: a number chosen for chunk generation is not a light budget.
+ *
+ * lightSeedAvgMsMax: skylight seed plus boundary stitch, per column the light
+ * loop seeds. Measured 4.6 to 4.8 ms per column on a four core Linux runner at
+ * render distance 8, so 8 ms leaves room for a noisy machine while still
+ * warning when light seeding gets meaningfully slower.
+ */
+const BENCH_LOCAL = {
+	lightSeedAvgMsMax: 8,
+} as const
+
+/** Trimmed git output, or null when git cannot answer. */
+function gitOutput(args: readonly string[]): string | null {
+	try {
+		const out = execFileSync('git', [...args], {
+			cwd: HERE,
+			encoding: 'utf8',
+			stdio: ['ignore', 'pipe', 'ignore'],
+		})
+		return out.trim()
+	} catch {
+		return null
+	}
+}
+
+/**
+ * The task this run belongs to. BENCH_TASK wins, otherwise the branch names the
+ * work, so a recorded baseline points at the run that produced it instead of at
+ * whichever task string was hard-coded here last.
+ */
+function resolveTask(): { task: string; taskSource: string } {
+	const fromEnv = process.env.BENCH_TASK?.trim()
+	if (fromEnv !== undefined && fromEnv !== '') {
+		return { task: fromEnv, taskSource: 'env:BENCH_TASK' }
+	}
+	const branch = gitOutput(['rev-parse', '--abbrev-ref', 'HEAD'])
+	if (branch !== null && branch !== '' && branch !== 'HEAD') {
+		const leaf = branch.split('/').pop()
+		return {
+			task: leaf === undefined || leaf === '' ? branch : leaf,
+			taskSource: `git-branch:${branch}`,
+		}
+	}
+	const head = gitOutput(['rev-parse', '--short', 'HEAD'])
+	if (head !== null && head !== '') return { task: `detached-${head}`, taskSource: 'git-head' }
+	return { task: 'unknown', taskSource: 'unavailable' }
+}
+
 type MetricStatus = 'ok' | 'warn' | 'fail'
 
 interface Metric {
@@ -294,10 +352,17 @@ interface Metric {
 	value: number
 	threshold: number
 	failThreshold: number
+	/** Whether this budget is frozen by the contract or owned by this harness. */
+	budgetSource: BudgetSource
 	status: MetricStatus
 }
 
-function makeMetric(name: string, value: number, threshold: number): Metric {
+function makeMetric(
+	name: string,
+	value: number,
+	threshold: number,
+	budgetSource: BudgetSource,
+): Metric {
 	const failThreshold = threshold * BENCH.failFactor
 	const status: MetricStatus = value > failThreshold ? 'fail' : value > threshold ? 'warn' : 'ok'
 	return {
@@ -306,6 +371,7 @@ function makeMetric(name: string, value: number, threshold: number): Metric {
 		value: round3(value),
 		threshold,
 		failThreshold: round3(failThreshold),
+		budgetSource,
 		status,
 	}
 }
@@ -322,12 +388,22 @@ async function main(): Promise<void> {
 	const chunkMeshAvgMs = meshing.totalMs / Math.max(1, meshing.chunkCount)
 	const sectionMeshAvgMs = meshing.totalMs / Math.max(1, meshing.sectionCount)
 	const simTickAvgMs = tick.totalMs / Math.max(1, tick.ticks)
+	// The skylight seed and boundary stitch, per column the light loop seeds.
+	// Gated against a light budget of its own, declared in this harness and
+	// labelled bench-local, rather than against the chunk generation budget it
+	// used to borrow.
+	const lightSeedAvgMs = generation.lightMs / Math.max(1, generation.decorated)
 
+	// Every budget this run prints or records belongs to a metric right here,
+	// compared against that budget and its fail threshold.
 	const metrics: Metric[] = [
-		makeMetric('chunkGenAvgMs', chunkGenAvgMs, BENCH.chunkGenAvgMsMax),
-		makeMetric('chunkMeshAvgMs', chunkMeshAvgMs, BENCH.chunkMeshAvgMsMax),
-		makeMetric('simTickAvgMs', simTickAvgMs, BENCH.simTickAvgMsMax),
+		makeMetric('chunkGenAvgMs', chunkGenAvgMs, BENCH.chunkGenAvgMsMax, 'contract'),
+		makeMetric('chunkMeshAvgMs', chunkMeshAvgMs, BENCH.chunkMeshAvgMsMax, 'contract'),
+		makeMetric('sectionMeshAvgMs', sectionMeshAvgMs, PERF.sectionMeshBudgetMs, 'contract'),
+		makeMetric('simTickAvgMs', simTickAvgMs, BENCH.simTickAvgMsMax, 'contract'),
+		makeMetric('lightSeedAvgMs', lightSeedAvgMs, BENCH_LOCAL.lightSeedAvgMsMax, 'bench-local'),
 	]
+	const { task, taskSource } = resolveTask()
 
 	const warnings = metrics
 		.filter((metric) => metric.status === 'warn')
@@ -352,8 +428,16 @@ async function main(): Promise<void> {
 
 	const report = {
 		version: 1,
-		task: 'wire-a',
+		task,
+		taskSource,
 		generatedAt: new Date().toISOString(),
+		git: {
+			branch: gitOutput(['rev-parse', '--abbrev-ref', 'HEAD']),
+			commit: gitOutput(['rev-parse', 'HEAD']),
+			// True when the tree carried uncommitted changes as this run started,
+			// so a baseline taken on a clean commit can be told from a local one.
+			dirty: (gitOutput(['status', '--porcelain']) ?? '') !== '',
+		},
 		contractVersion: CONTRACT_VERSION,
 		failFactor: BENCH.failFactor,
 		meta: {
@@ -397,23 +481,21 @@ async function main(): Promise<void> {
 			},
 			notes:
 				'chunkGenAvgMs covers real terrain generation plus decoration per chunk; the ' +
-				'skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs, ' +
-				'and the light engine is also exercised inside simTickAvgMs.',
+				'skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs ' +
+				'and gated as lightSeedAvgMs, that same total over the columns the light loop ' +
+				'seeds, against the bench-local light budget in BENCH_LOCAL because the contract ' +
+				'freezes none; the light engine is also exercised inside simTickAvgMs; ' +
+				'sectionMeshAvgMs is compared against the frozen section mesh budget instead of ' +
+				'being printed beside a budget nothing checked; every metric records whether its ' +
+				'budget is frozen by the contract or owned by this harness, and task reflects the ' +
+				'run that produced this file rather than a hard-coded name.',
 		},
 		metrics,
-		informational: [
-			{
-				name: 'sectionMeshAvgMs',
-				unit: 'ms',
-				value: round3(sectionMeshAvgMs),
-				budget: PERF.sectionMeshBudgetMs,
-			},
-		],
 		warnings,
 		failures,
 	}
 
-	const here = dirname(fileURLToPath(import.meta.url))
+	const here = HERE
 	const outDir = resolve(here, '..', 'results')
 	mkdirSync(outDir, { recursive: true })
 	const outPath = resolve(outDir, 'bench.json')
@@ -436,13 +518,11 @@ async function main(): Promise<void> {
 	for (const metric of metrics) {
 		console.log(
 			`[bench] ${metric.name} = ${metric.value} ms ` +
-				`(budget ${metric.threshold} ms, fail > ${metric.failThreshold} ms) -> ${metric.status}`,
+				`(budget ${metric.threshold} ms ${metric.budgetSource}, ` +
+				`fail > ${metric.failThreshold} ms) -> ${metric.status}`,
 		)
 	}
-	console.log(
-		`[bench] sectionMeshAvgMs = ${round3(sectionMeshAvgMs)} ms ` +
-			`(section budget ${PERF.sectionMeshBudgetMs} ms)`,
-	)
+	console.log(`[bench] task=${task} (${taskSource})`)
 	console.log(
 		`[bench] terrain ${round3(generation.terrainMs)} ms, decorate ` +
 			`${round3(generation.decorateMs)} ms, light seed+stitch ${round3(generation.lightMs)} ms`,

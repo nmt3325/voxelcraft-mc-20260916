@@ -1,7 +1,13 @@
 {
   "version": 1,
-  "task": "wire-a",
-  "generatedAt": "2026-09-16T02:57:13.917Z",
+  "task": "fix-f",
+  "taskSource": "git-branch:feat/mc-20260916/fix-f",
+  "generatedAt": "2026-09-16T11:00:15.000Z",
+  "git": {
+    "branch": "feat/mc-20260916/fix-f",
+    "commit": "ef56c1a00276cbf0ee713563362bd3a959bafcc5",
+    "dirty": false
+  },
   "contractVersion": "1.1.0",
   "failFactor": 3,
   "meta": {
@@ -44,47 +50,60 @@
       "ticks": 600
     },
     "totals": {
-      "chunkGenMs": 563.23,
-      "terrainMs": 524.555,
-      "decorateMs": 38.676,
-      "lightSeedAndStitchMs": 8169.878,
-      "meshMs": 94.702,
-      "simTickMs": 605.786
+      "chunkGenMs": 604.869,
+      "terrainMs": 559.158,
+      "decorateMs": 45.711,
+      "lightSeedAndStitchMs": 1045.584,
+      "meshMs": 118.94,
+      "simTickMs": 724.483
     },
-    "notes": "chunkGenAvgMs covers real terrain generation plus decoration per chunk; the skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs, and the light engine is also exercised inside simTickAvgMs."
+    "notes": "chunkGenAvgMs covers real terrain generation plus decoration per chunk; the skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs and gated as lightSeedAvgMs, that same total over the columns the light loop seeds, against the bench-local light budget in BENCH_LOCAL because the contract freezes none; the light engine is also exercised inside simTickAvgMs; sectionMeshAvgMs is compared against the frozen section mesh budget instead of being printed beside a budget nothing checked; every metric records whether its budget is frozen by the contract or owned by this harness, and task reflects the run that produced this file rather than a hard-coded name."
   },
   "metrics": [
     {
       "name": "chunkGenAvgMs",
       "unit": "ms",
-      "value": 1.949,
+      "value": 2.093,
       "threshold": 6,
       "failThreshold": 18,
+      "budgetSource": "contract",
       "status": "ok"
     },
     {
       "name": "chunkMeshAvgMs",
       "unit": "ms",
-      "value": 2.959,
+      "value": 3.717,
       "threshold": 12,
       "failThreshold": 36,
+      "budgetSource": "contract",
+      "status": "ok"
+    },
+    {
+      "name": "sectionMeshAvgMs",
+      "unit": "ms",
+      "value": 0.743,
+      "threshold": 1.5,
+      "failThreshold": 4.5,
+      "budgetSource": "contract",
       "status": "ok"
     },
     {
       "name": "simTickAvgMs",
       "unit": "ms",
-      "value": 1.01,
+      "value": 1.207,
       "threshold": 8,
       "failThreshold": 24,
+      "budgetSource": "contract",
       "status": "ok"
-    }
-  ],
-  "informational": [
+    },
     {
-      "name": "sectionMeshAvgMs",
+      "name": "lightSeedAvgMs",
       "unit": "ms",
-      "value": 0.592,
-      "budget": 1.5
+      "value": 4.647,
+      "threshold": 8,
+      "failThreshold": 24,
+      "budgetSource": "bench-local",
+      "status": "ok"
     }
   ],
   "warnings": [],

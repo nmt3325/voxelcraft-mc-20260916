@@ -27,6 +27,10 @@ export function createHud(doc: Document, host: HudHost): UiPanel {
 		hungerLabel,
 	])
 
+	const xpFill = el(doc, 'span', { class: 'vc-bar-fill' })
+	const xpLabel = el(doc, 'span', { class: 'vc-bar-label', 'data-testid': 'xp-level' })
+	const xp = el(doc, 'div', { class: 'vc-bar vc-bar-xp', 'data-testid': 'xp' }, [xpFill, xpLabel])
+
 	const hotbar = el(doc, 'div', { class: 'vc-hotbar', 'data-testid': 'hotbar' })
 	const slots: SlotView[] = []
 	for (let i = 0; i < INVENTORY.hotbarSlots; i++) {
@@ -41,7 +45,7 @@ export function createHud(doc: Document, host: HudHost): UiPanel {
 
 	const element = el(doc, 'div', { class: 'vc-hud', 'data-testid': 'hud' }, [
 		crosshair,
-		el(doc, 'div', { class: 'vc-stats' }, [health, hunger]),
+		el(doc, 'div', { class: 'vc-stats' }, [health, hunger, xp]),
 		hotbar,
 	])
 
@@ -63,6 +67,13 @@ export function createHud(doc: Document, host: HudHost): UiPanel {
 				'style',
 				`width:${percent(snapshot.hunger, snapshot.maxHunger).toFixed(1)}%`,
 			)
+			const level = Math.max(0, Math.round(snapshot.xp.level))
+			const total = Math.max(0, Math.round(snapshot.xp.total))
+			setText(xpLabel, `Lvl ${level} - ${total} xp`)
+			setAttr(xpFill, 'style', `width:${percent(snapshot.xp.progress, 1).toFixed(1)}%`)
+			setAttr(xp, 'data-level', String(level))
+			setAttr(xp, 'data-total', String(total))
+			setAttr(xp, 'data-orbs', String(Math.max(0, Math.round(snapshot.xp.orbs))))
 
 			for (let i = 0; i < slots.length; i++) {
 				slots[i].update(snapshot.hotbar[i] ?? null)

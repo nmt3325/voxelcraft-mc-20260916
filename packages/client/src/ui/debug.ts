@@ -21,6 +21,11 @@ export function createDebugOverlay(doc: Document): UiPanel {
 		row('draws'),
 		row('geometry'),
 		row('render-distance'),
+		row('dimension'),
+		row('xp'),
+		row('farm'),
+		row('herd'),
+		row('net'),
 	])
 
 	const write = (id: string, text: string): void => {
@@ -43,6 +48,22 @@ export function createDebugOverlay(doc: Document): UiPanel {
 			write('draws', `Draw calls ${d.drawCalls}`)
 			write('geometry', `Quads ${d.quads} Tris ${d.triangles}`)
 			write('render-distance', `Render distance ${d.renderDistance}`)
+			write('dimension', `Dimension ${snapshot.dimension}`)
+			write(
+				'xp',
+				`XP level ${snapshot.xp.level} total ${snapshot.xp.total} orbs ${snapshot.xp.orbs}`,
+			)
+			write('farm', `Crops ${snapshot.farm.crops} mature ${snapshot.farm.mature}`)
+			write(
+				'herd',
+				`Animals ${snapshot.herd.animals} babies ${snapshot.herd.babies} in love ${snapshot.herd.inLove}`,
+			)
+			write(
+				'net',
+				snapshot.multiplayer.enabled
+					? `Net ${snapshot.multiplayer.state} ${snapshot.multiplayer.players} players`
+					: 'Net single player',
+			)
 		},
 	}
 }

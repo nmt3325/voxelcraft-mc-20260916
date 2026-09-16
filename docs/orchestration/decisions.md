@@ -193,3 +193,245 @@ generation, break/place, save/load, crafting and the E2E suite are never reduced
 - 2026-09-16 16:30 JST D-054: L1-E が `contract_changes_needed` で挙げた 2 件を L0 が解消した。`pnpm-lock.yaml` に `packages/net` と `apps/server` の importers を追加し、`scripts/wire-deps.cjs` のプロジェクトグラフにも両者を登録（`packages/net` は core-types 依存、`apps/server` は core-types と net 依存）。コミット `0600768`。なお CI の install ステップは verify / e2e の両ジョブとも `--no-frozen-lockfile` を使っているため CI が赤になる状態ではなかったが、lockfile をリポジトリの真実に揃えた。
 - 2026-09-16 16:30 JST D-055: L1-H（v2-client）のセッションは、子自身の 6 ゲートがすべてグリーンになった後、`docs/reports/v2-client.json` を書き出す前に status=failed で終了した。リモートブランチの 8 コミット / 84 ファイルは健全だったため、子の自己申告ではなく L0 の git 実測とマージゲート（job `03234d4ea6e547bc`、8 ステップすべて exit 0）を合格根拠として L0 がレポートを代筆した。以後も「子のレポートは参考、合格判定は L0 のゲート」を原則とする。
 - 2026-09-16 16:30 JST D-056: Phase 8 の統合順は v2-net → v1_1-sim → v2-world → v2-gameplay → v2-client とした。新規パッケージ（`packages/net` / `apps/server`）を含む v2-net を先頭に置いて lockfile と依存グラフの欠落を最初に解消し、残る 4 本は素の `scripts/l0/merge-check.sh` で通せる状態にした。各マージは `merge --no-ff` 直後に install/tsc/lint/test/build/size/e2e/bench の 8 ゲートを毎回実行している。
+
+## D-057 昇格前に main を integration へ同期する（2026-09-16）
+
+- 事象: PR #9 のマージコミットにより `main` が `integration/mc-20260916` の祖先でなくなり、`scripts/l0/main-merge.sh` の fast-forward ガードが `NOT_FF` で停止した。
+- 判断: 昇格の直前に `origin/main` を統合ブランチへ `merge --no-ff` して同期し、同期後の head でフルゲートを再実行してから PR を作る。リリースは常に昇格後の `main` を target にする。
+- 実装: `scripts/l0/sync-main.sh` を追加した。同期済みなら `ALREADY_SYNCED=yes` で no-op、未同期ならマージしてツリー差分の有無を出力し、`origin/integration/mc-20260916` へ push する。
+- 実測: 同期 head `687ff6b89355d82b79db1d454878f2d3d2f19db7`（ツリー変更なし）、再ゲート job `87707e2487b54703` で 8 ゲートとも RC=0、PR #10 → main `35f1acbdfeb6f5741be4abaaa4716c343af2bdc8`、`MAIN_CONTAINS_INTEG=yes`、CI run `35071357361` success。
+
+## D-058 外部ミラーの再試行結果と成果物 URL の正典（2026-09-16）
+
+- v1.1.0 の zip で Litterbox（72h）と Catbox を再試行したが、Litterbox は `HTTP=500`（BunkerWeb のエラーピージ）、Catbox は `HTTP=412 Invalid uploader` で失敗。
+- 判断: D-049 / D-053 を維持し、GitHub Release のアセットを成果物の正典 URL とする。v1.1.0 は `curl -sIL` で HTTP 200 / content-length 1263077 を確認し、実ダウンロードとバイト一致を検証済み。
+
+## D-059 rev3 レビューの採否（net / server、2026-09-16）
+
+- 対象: `docs/reviews/rev3.md`（統合 head `9573084` での独立レビュー、verdict = request changes）。
+- 全件 accept。担当は `fix-c`（ブランチ `feat/mc-20260916/fix-c`、env `linux-snnxpyz0`、所有パス `packages/net/**` `apps/server/**` `tests/bench/**`）。
+  - B-1 移動速度制限が事実上存在しない。`onInput` がメッセージ単位で移動を適用し、`input.tick < lastTick` だけを拒否するため、同一 tick の Input 200 通で 8 server tick に 43.17 ブロック進む（予算 0.21585 ブロック/tick、約 25 倍）。tick 単位の累積予算と重複 tick 拒否を入れ、回帰テストを追加する。
+  - B-2 クライアントが無境界なチャンク生成を強制できる。置換検証が y のみで、拒否経路でもブロックを読み戻して列を生成・永続キャッシュする（到達外 300 回で列 3 → 303、RSS 93.6 → 150.7 MiB）。ワールド読み出し前に reach とストリーム半径を検証し、上限付き列キャッシュを入れる。
+  - M-1 フレームヘッダの version 未検証、M-2 受信レート制限と tick 作業予算の不在、M-3 `ChunkColumn.revision` の未使用、M-4 `sent` 集合が増え続け再送を永久に防ぐ件、M-5 `tests/bench/results/bench.json` の陳腐化と `lightSeedAndStitchMs` の閾値欠落。
+- 補足: マルチプレイは D-046 で LAN / 開発用の権威サーバと位置付けているため、これらの修正は v1 完了条件の前提ではなく v1.2 の強化として扱う。ただし公開サーバとして使える印象を与えないよう README の位置付けを維持する。
+
+## D-060 rev4 レビューの採否（gameplay / client / app、2026-09-16）
+
+- 対象: `docs/reviews/rev4.md`（統合 head `9573084` での独立レビュー、verdict = request changes）。7 ゲートは全て exit 0 だが、ゲートがアプリ層の到達性を検出できないという指摘を採用する。
+- B-01 accept。担当は `fix-d`（ブランチ `feat/mc-20260916/fix-d`、env `linux-hs3pczf0`、所有パス `packages/gameplay/**` `packages/sim/**`）。BLOCK_V2 18 件と ITEM_V2 18 件が既定レジストリに未登録、既定レシピ 53 対 v2 レジストリ 58、sim ブロック表が id 64 以上を AIR にフォールバックするため、seed 1337 の村（ブロック x 72 z 632、126 voxel）が破壊も設置もできず光と流体の計算も誤る。
+- 到達性の major（XP / エンチャント / 農業 / 繁殖 に `packages/gameplay` 外の呼び出しがない、ネザーとポータルが到達不能、net がクライアントから未使用）は accept。既に走っている `wire-b`（`apps/game/**` `packages/client/**` `tests/e2e/**`）に集約し、機能領域ごとの到達性 E2E を追加する。
+- defer: 音声再生のゲート化、`drawCalls` の自明的値と `droppedQuads: 0` のハードコード、`ParticlePool` の O(live) 走査、`apps/game` の `@voxelcraft/assets-gen` 依存整理は wire-b の裁量とし、本ラウンドでは完了条件にしない。
+- bench baseline の陳腐化と `lightSeedAndStitchMs` の閾値欠落は rev3 と重複するため D-059 の M-5（fix-c）に統合した。
+- レビュー sha ドリフト（起動時 `dae16174`、実測 `9573084`）は仕様通り。レビュアは常に自分で `origin/integration/mc-20260916` を fetch して実 head を報告する。
+- レビュー成果物は `docs/reviews/rev3.md` と `docs/reviews/rev4.md` として統合ブランチにマージ済み（ゲート job `6d65cba9cb6c4726` と `d0dee49ed71b429f`、統合 head `9aab3290`）。
+
+## D-061 Review round 2 fixes were merged one branch at a time
+
+fix-d (registries), fix-c (net hardening) and wire-b (app reachability) were
+verified against git rather than self-reports, then merged with `merge --no-ff`
+in that order, each followed by the full eight-gate check. Resulting integration
+commits: fix-d `ce558fb4`, fix-c `1a75b2cf`, wire-b `74ed23c9`. Every gate exited
+0 on all three merges.
+
+## D-062 apps/game depends on @voxelcraft/net as a real workspace package
+
+wire-b reached the net layer through a tsconfig `paths` entry plus a Vite
+`resolve.alias`, because `package.json` and `pnpm-lock.yaml` are owned by L0.
+L0 now adds `net` to the `apps/game` entry in `scripts/wire-deps.cjs`,
+regenerates the manifest, refreshes the lockfile importer, and removes both the
+tsconfig path and the Vite alias. The protocol module is a normal dependency, so
+the bundler, the type checker and `--frozen-lockfile` all agree.
+
+## D-063 Nether edits are not persisted in v1.2
+
+`SAVE_VERSION` 1 has no per-dimension chunk namespace, so blocks placed in the
+Nether are not written back to IndexedDB. Changing the save format is a
+breaking contract change, so it is deferred. Documented as a known limitation
+rather than silently shipped.
+
+## D-064 Animal breeding stays verified at the gameplay API level
+
+Breeding needs mob entities ticked inside `packages/sim` and `apps/server`, which
+was outside the owner set of this round. The breeding rules are covered by the
+gameplay integration test; the in-app wiring is carried over to the next release
+instead of being half-wired into the frame loop.
+
+## D-065 Review round 3 adjudication
+
+`rev5` and `rev6` independently reviewed
+`40e1a3f5c6d35ad364af6e49a296a64756921850`, both returned `request changes`, and
+both reproduced their findings with their own drivers on the runner. Every
+blocker below is assigned to exactly one owning branch; nothing is closed on the
+strength of a report alone.
+
+## D-066 rev5 B-02: apps/game must not keep its own v2 tables
+
+`apps/game/src/registries.ts` declared a second copy of the v2 block and item
+data and 14 of 18 ids disagreed with the gameplay registries. The
+player-visible effects were a breakable Nether portal (hardness 0 against the
+contract value -1) that inserted the undefined item id 65, and crops carrying an
+`itemId` that let a mature plant be pocketed and replanted. Branch
+`feat/mc-20260916/fix-e` removes the duplication so the gameplay and core-types
+registries are the single source of truth.
+
+## D-067 rev5 M-02: the app registry needs tests with power
+
+No test imported `apps/game/src/registries.ts`, so deleting an entry left every
+gate green. `fix-e` adds parity tests across all 36 v2 ids and must show them
+failing on a deliberately deleted entry before restoring it.
+
+## D-068 rev6 B-1: an accepted edit must be durable or fail loudly
+
+`worldStore` inserted a new column and ran eviction before the write pinned its
+key, so the new column was the only unpinned victim: 400 edits in 400 distinct
+columns produced 62 unreadable blocks, first loss at index 338, while the server
+still returned success and broadcast `BlockChange`. Branch
+`feat/mc-20260916/fix-f` fixes the ordering and accounting, keeps the resident
+set inside its cap, and adds regression tests that fail on the old ordering.
+
+## D-069 rev6: CI installs frozen and runs the perf harness
+
+Both CI jobs installed with `--no-frozen-lockfile`, so a stale lockfile could
+never fail the build, and `pnpm bench` never ran in CI at all. CI now installs
+with `--frozen-lockfile` in every job and gains a `bench` job that runs the
+harness and uploads its results.
+
+## D-070 rev6: bench baselines must describe their own run
+
+The committed baseline hard-coded `task: 'fix-c'`, gated light seeding against
+the chunk-generation budget, and printed a section-mesh budget that nothing
+compared. `fix-f` owns `tests/bench` this round and makes the recorded task, the
+gated budgets and the printed budgets all correspond to real measurements.
+
+## D-071 rev5 M-01: breeding stays deferred and is documented as such
+
+Breeding is still unreachable from the running game, which is the deliberate
+outcome of D-064. It stays deferred, and the README states it as a known
+limitation instead of implying the feature is playable.
+
+## D-072 README is rebuilt from measured values at the release sha
+
+`README.md` misstated the bundle size, the e2e spec count, all four bench
+numbers and `CONTRACT_VERSION`, never mentioned `apps/server` or
+`@voxelcraft/net`, and never mentioned the Nether. L0 rewrites those sections
+from the numbers printed by the final gate run on the promoted sha, including the
+Nether persistence limitation from D-063.
+
+## D-073 Deferred minors from review round 3
+
+Carried forward with no code change this round: the audio gate never asserts
+`assetsReady`; `portalCue` is recomputed every frame; `ParticlePool` scans all
+live particles; the `drawCalls` assertion is tautological; `droppedQuads` is
+hard-coded to 0; `@voxelcraft/assets-gen` is still listed as a dependency that is
+no longer needed; `blockPropsV2.test.ts` has one guard that only checks its own
+fixture; and reviewers necessarily see a slightly older sha than the tip when L0
+keeps merging during a review.
+
+## D-074 rev5 B-02 and M-02 closed by fix-e
+
+`apps/game/src/registries.ts` is now a thin re-export of `BLOCKS` and `ITEMS`
+from `@voxelcraft/gameplay`, so the app can no longer drift from the shipped
+registries. Before the fix 14 of 36 v2 ids differed across 40 fields, the Nether
+portal had hardness 0 and inserted item id 65, and the three crops exposed a
+pickable `itemId`; after the fix the drift count is 0, the portal is unbreakable
+and the crops expose no item. `apps/game/src/registries.test.ts` asserts
+field-for-field parity for all 36 ids and was proven red by deleting farmland
+from the app table.
+
+## D-075 rev6 B-1 closed by fix-f: durable or loud writes
+
+`worldStore` pins a column before inserting it and makes room before the insert,
+so the column being written can never be the eviction victim. When every
+resident column holds an edit the store refuses, logs the refusal, and `setBlock`
+returns false so the server never broadcasts a rejected `BlockChange`. The
+reproduction went from 400 accepted with 62 unreadable (first loss at index 338)
+and 400 resident against a cap of 338, to 338 accepted, 62 loudly refused, zero
+unreadable and 338 resident. Three regression tests were proven red on the old
+ordering.
+
+## D-076 Root `eslint .` failed on an L0 file, not on child code
+
+Both fix-e and fix-f stopped and reported `blocked` because gate 3 as they ran it
+(`pnpm lint`, the root `eslint .` script) exited 1 with two
+`@typescript-eslint/no-require-imports` errors in `scripts/wire-deps.cjs`, a file
+L0 introduced in `c6d3ce9`. Both proved the failure reproduces on a pristine base
+tree and neither touched an L0 path, which is exactly the required behaviour. The
+fix is an eslint override that allows `require()` in `**/*.cjs`, since those files
+are CommonJS by definition; the script itself is unchanged.
+
+## D-077 Gate 3 now runs both lint forms
+
+`pnpm -r lint` (used by CI, `merge-check.sh` and `full-gate.sh`) and root
+`pnpm lint` disagreed, which is how a lint error survived several green merges.
+Both L0 gate scripts now run `pnpm -r lint` and `pnpm lint` as separate steps
+(`RC lint` and `RC lint_root`), so the two forms can never diverge again.
+
+## D-078 Deferred: block drops ignore tool tier and drop tables
+
+fix-e reported that the break path pockets `definition.itemId` with no tier or
+drop-table lookup, so QUARTZ_ORE (67) yields its own block item instead of
+NETHER_QUARTZ (312). Out of scope for review round 3; recorded as a known
+limitation for a future drop-table pass rather than patched during promotion.
+
+## D-079 Measured values recorded for the v1.2.0 README
+
+README numbers are substituted from the promoted sha: bundle raw and gzip bytes
+from `pnpm size`, the Playwright test count from the e2e specs, and the four
+bench averages from the committed `tests/bench/results/bench.json` baseline.
+Static counts measured at this sha: 58 crafting recipes (53 v1 plus 5 v2), 119
+atlas layers, 24 procedural WAVs, `CONTRACT_VERSION` 1.1.0 and
+`CONTRACT_V2_VERSION` 1.1.0.
+
+## D-080 fix-e merged: apps/game no longer ships its own block and item tables
+
+Closes rev5 blocker B-02 and major M-02. `apps/game/src/registries.ts` is now a thin re-export
+of `BLOCKS` / `ITEMS` from `@voxelcraft/gameplay` (`BLOCKS_V2` and `ITEMS_V2` are aliases), so
+the application cannot drift from the contract registries again. Evidence: a drift probe over
+all 36 v2 ids printed `TOTAL_DRIFT_IDS=14 of 36` and `TOTAL_DRIFT_FIELDS=40` before the fix and
+`TOTAL_DRIFT_IDS=0 of 36` / `TOTAL_DRIFT_FIELDS=0` after it. The Nether portal is unbreakable
+again (`hardness=-1`, `itemId=0`, `breakable_by_main_ts=false`) and the three crops no longer
+carry a pickable `itemId`. `apps/game/src/main.ts` now treats a negative hardness as unbreakable
+and only pockets `definition.itemId` when it is greater than zero. A new
+`apps/game/src/registries.test.ts` (10 tests) fails if the app and the gameplay registries ever
+diverge; the red proof run exited 1 with `Error: apps/game cannot resolve block 70` before the
+fix and 19 tests pass after it. Merged into `integration/mc-20260916` as 3968bd9a with all nine
+gates green; the bundle shrank from 1040207 to 1037502 bytes raw.
+
+## D-081 fix-f merged: durable-or-loud world store writes
+
+Closes rev6 blocker B-1. The authoritative server no longer accepts a block edit it cannot keep:
+`worldStore` pins a column before eviction can consider it, and when every resident column
+already holds edits the write is refused, logged loudly and never broadcast. Evidence at shipped
+config with 400 edits in 400 distinct columns: before, 400 accepted / 338 readable /
+62 unreadable with the first loss at index 338; after, 338 accepted / 62 refused / 0 unreadable
+and 338 of 338 columns resident against the 338 cap. Three regression tests
+(`editBroadcast`, `worldStoreCap`, `worldStoreEdits`) reproduce the loss; the red run exited 1
+with four failures and the restored implementation exits 0. The bench harness also stops
+hard-coding `task`, derives it from the git branch, records `git.branch/commit/dirty`, gates
+`lightSeedAvgMs` against the bench-local light budget instead of the chunk-gen budget and
+compares `sectionMeshAvgMs` against `PERF.sectionMeshBudgetMs` instead of printing it beside a
+budget nothing checked. Merged as 870dccab with all nine gates green.
+
+## D-082 the v1.2.0 README is rebuilt from measured numbers
+
+rev5 M-03 and rev6's documentation major are closed. The README now documents the Nether
+(including the D-063 persistence limitation), the optional authoritative WebSocket server
+(`pnpm --filter @voxelcraft/server start`, `ws://127.0.0.1:8787/ws`), `@voxelcraft/net` and
+`apps/server` in both the architecture diagram and the workspace table, and a `Known
+limitations` section. Every number in it was measured on integration 870dccab rather than
+copied forward: bundle 1037502 B raw / 451420 B gzipped, 13 Playwright tests across 7 specs,
+58 crafting recipes (53 v1 plus 5 v2), 119 texture atlas layers, 24 procedural WAVs,
+`CONTRACT_VERSION` 1.1.0 and `CONTRACT_V2_VERSION` 1.1.0, and bench averages of chunk generation
+2.093 ms, chunk meshing 3.717 ms, section meshing 0.743 ms, sim tick 1.207 ms and light seeding
+4.647 ms. The build instructions use `pnpm install --frozen-lockfile`, matching CI.
+
+## D-083 fix-e and fix-f self-reported blocked; adjudicated as complete
+
+Both children ended with a `blocked` report whose only unmet gate was the root `eslint .` run
+that D-076 traced to an L0-owned file. Each child ran a control experiment on a pristine base
+tree and showed the same two pre-existing errors, so the block was not theirs. L0 verified both
+branches against git rather than against the reports: the changed-file lists stayed inside the
+owned paths, the red-to-green proofs were reproduced from the recorded job ids, and the nine-gate
+merge check passed on each merge commit. Both tasks are therefore recorded as done, and the
+child prompt template now names the exact lint command that counts as gate 3 so this class of
+false block cannot repeat.

@@ -35,8 +35,13 @@ interface ClientQueue {
 	cz: number
 	/** Still to send, nearest first from the current centre. */
 	queue: StreamTarget[]
-	/** Columns already shipped. A recentre must never resend one of these. */
-	readonly sent: Set<string>
+	/**
+	 * Columns already shipped, by chunk key. A recentre must not resend one that
+	 * is still in range, and must forget one that left it: a client drops a
+	 * column it can no longer see, so a session long set would permanently
+	 * starve a player who walks out and back again.
+	 */
+	readonly sent: Map<string, StreamTarget>
 	/** Whole plus fractional tokens; only the whole ones may be spent. */
 	tokens: number
 	/** null until the first next(): track() is never given a clock. */
@@ -86,6 +91,11 @@ export function createChunkStreamer(options: ChunkStreamerOptions = {}): ChunkSt
 	const offsets = ringOrder(radius)
 	const clients = new Map<EntityId, ClientQueue>()
 
+	/** The same square rule ringOrder() uses, applied to an absolute column. */
+	function inRange(state: ClientQueue, target: StreamTarget): boolean {
+		return Math.max(Math.abs(target.cx - state.cx), Math.abs(target.cz - state.cz)) <= radius
+	}
+
 	/** In-range columns around the centre that are not on the client yet. */
 	function pending(state: ClientQueue): StreamTarget[] {
 		const targets: StreamTarget[] = []
@@ -95,6 +105,13 @@ export function createChunkStreamer(options: ChunkStreamerOptions = {}): ChunkSt
 			if (!state.sent.has(chunkKey(cx, cz))) targets.push({ cx, cz })
 		}
 		return targets
+	}
+
+	/** Forgets the columns the new centre pushed out of the stream radius. */
+	function forgetOutOfRange(state: ClientQueue): void {
+		for (const [key, target] of state.sent) {
+			if (!inRange(state, target)) state.sent.delete(key)
+		}
 	}
 
 	function refill(state: ClientQueue, nowMs: number): void {
@@ -117,7 +134,7 @@ export function createChunkStreamer(options: ChunkStreamerOptions = {}): ChunkSt
 				cx,
 				cz,
 				queue: [],
-				sent: new Set<string>(),
+				sent: new Map<string, StreamTarget>(),
 				tokens: 0,
 				lastRefillMs: null,
 			}
@@ -130,8 +147,11 @@ export function createChunkStreamer(options: ChunkStreamerOptions = {}): ChunkSt
 			if (state === undefined) return
 			state.cx = cx
 			state.cz = cz
-			// Sent stays sent: the rest is re-ordered around the new centre, newly
-			// in-range columns join it, and what fell out of range is dropped.
+			// A column that is still in range stays sent; one that left is forgotten
+			// so it can be streamed again when the player comes back.
+			forgetOutOfRange(state)
+			// The rest is re-ordered around the new centre, newly in-range columns
+			// join it, and what fell out of range is dropped from the queue.
 			state.queue = pending(state)
 		},
 
@@ -139,16 +159,26 @@ export function createChunkStreamer(options: ChunkStreamerOptions = {}): ChunkSt
 			clients.delete(playerId)
 		},
 
-		next(playerId: EntityId, nowMs: number): readonly StreamTarget[] {
+		next(
+			playerId: EntityId,
+			nowMs: number,
+			limit = Number.POSITIVE_INFINITY,
+		): readonly StreamTarget[] {
 			const state = clients.get(playerId)
 			// A tick can race a disconnect, so an unknown player is normal here.
 			if (state === undefined) return NOTHING
 			refill(state, nowMs)
-			const budget = Math.min(Math.floor(state.tokens), state.queue.length)
+			// `limit` is the caller's remaining per tick work budget. Only what is
+			// actually handed over costs a token and is marked sent, so a column the
+			// server had no room for stays queued instead of being lost.
+			const allowed = Number.isFinite(limit)
+				? Math.max(0, Math.floor(limit))
+				: state.queue.length
+			const budget = Math.min(Math.floor(state.tokens), state.queue.length, allowed)
 			if (budget <= 0) return NOTHING
 			state.tokens -= budget
 			const targets = state.queue.splice(0, budget)
-			for (const target of targets) state.sent.add(chunkKey(target.cx, target.cz))
+			for (const target of targets) state.sent.set(chunkKey(target.cx, target.cz), target)
 			return targets
 		},
 	}

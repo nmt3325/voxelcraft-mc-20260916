@@ -141,16 +141,37 @@ describe('createServerWorld', () => {
 		expect(world.block(-1, 101, 0)).not.toBe(BLOCK.STONE)
 	})
 
-	it('bumps the revision of the edited column only', () => {
+	it('answers hasColumn without generating the column', () => {
 		const world = createServerWorld(SEED)
-		const edited = world.chunk(0, 0)
-		const untouched = world.chunk(-2, 3)
-		expect(edited.revision).toBe(0)
-		world.setBlock(3, 120, 4, BLOCK.STONE)
-		expect(edited.revision).toBe(1)
-		world.setBlock(3, 121, 4, BLOCK.STONE)
-		expect(edited.revision).toBe(2)
-		expect(untouched.revision).toBe(0)
+		expect(world.hasColumn(4, -4)).toBe(false)
+		expect(world.loadedChunks).toBe(0)
+		world.chunk(4, -4)
+		expect(world.hasColumn(4, -4)).toBe(true)
+		expect(world.loadedChunks).toBe(1)
+	})
+
+	it('bounds the cache by evicting the least recently used column', () => {
+		const world = createServerWorld(SEED, DIMENSION.Overworld, { maxColumns: 3 })
+		world.chunk(0, 0)
+		world.chunk(1, 0)
+		world.chunk(2, 0)
+		// Touching 0,0 again leaves 1,0 as the oldest entry.
+		world.chunk(0, 0)
+		world.chunk(3, 0)
+		expect(world.loadedChunks).toBe(3)
+		expect(world.hasColumn(1, 0)).toBe(false)
+		expect(world.hasColumn(0, 0)).toBe(true)
+		expect(world.hasColumn(3, 0)).toBe(true)
+	})
+
+	it('pins an edited column so eviction cannot roll the edit back', () => {
+		const world = createServerWorld(SEED, DIMENSION.Overworld, { maxColumns: 2 })
+		expect(world.setBlock(1, 100, 1, BLOCK.COBBLESTONE)).toBe(true)
+		for (let cx = 1; cx <= 20; cx++) world.chunk(cx, 7)
+		expect(world.hasColumn(0, 0)).toBe(true)
+		expect(world.block(1, 100, 1)).toBe(BLOCK.COBBLESTONE)
+		// Only the pinned column may put the store over its cap.
+		expect(world.loadedChunks).toBeLessThanOrEqual(3)
 	})
 
 	it('refuses to build outside the column and reads air there', () => {

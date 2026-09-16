@@ -68,6 +68,9 @@ importers:
       '@voxelcraft/gameplay':
         specifier: workspace:*
         version: link:../../packages/gameplay
+      '@voxelcraft/net':
+        specifier: workspace:*
+        version: link:../../packages/net
       '@voxelcraft/sim':
         specifier: workspace:*
         version: link:../../packages/sim

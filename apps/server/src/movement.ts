@@ -7,14 +7,17 @@
  * deterministic; clampMovement still caps whatever this produces, so a bug in
  * this file can make a player walk oddly but can never break the speed limit.
  */
-import { INPUT_BIT, NET, type NetInput } from '@voxelcraft/core-types'
+import { INPUT_BIT, NET, PHYSICS, type NetInput } from '@voxelcraft/core-types'
 import { hasInput } from '@voxelcraft/net'
 import type { DesiredMove, PlayerState, ServerWorld } from './types'
 
-/** Blocks per second at a walk, expressed per tick. */
-export const WALK_SPEED = 4.317 / NET.tickHz
-export const SPRINT_MULTIPLIER = 1.3
-export const SNEAK_MULTIPLIER = 0.3
+/** The frozen walk speed, expressed per server tick: 4.317 / 20 blocks. */
+export const WALK_SPEED = PHYSICS.walkSpeed / NET.tickHz
+/** The same for a sprint, kept for readers that want the number by name. */
+export const SPRINT_SPEED = PHYSICS.sprintSpeed / NET.tickHz
+/** Multipliers rather than separate speeds, straight from the contract. */
+export const SPRINT_MULTIPLIER = PHYSICS.sprintSpeed / PHYSICS.walkSpeed
+export const SNEAK_MULTIPLIER = PHYSICS.sneakSpeed / PHYSICS.walkSpeed
 /** How far above the ground one Jump input lifts a player. */
 export const JUMP_HEIGHT = 1.25
 
@@ -29,7 +32,13 @@ export function moveAxes(bits: number): { forward: number; strafe: number } {
 	return { forward, strafe }
 }
 
-/** Per-tick speed for a bitfield. Sprint and sneak multiply, they do not add. */
+/**
+ * Per-tick speed for a bitfield. Sprint and sneak multiply, they do not add.
+ *
+ * This is also the per tick displacement budget the input gate enforces: one
+ * server tick may hand a client this many blocks of horizontal travel in total,
+ * however many Input frames it packed into that tick.
+ */
 export function speedFor(bits: number): number {
 	let speed = WALK_SPEED
 	if (hasInput(bits, INPUT_BIT.Sprint)) speed *= SPRINT_MULTIPLIER

@@ -1,0 +1,112 @@
+{
+  "task": "wire-b: make the Phase 8 packages reachable from apps/game (Nether and portal travel, xp and levels, enchanting, farming, particles, touch controls, village generation, opt-in multiplayer) and cover the new paths with Playwright",
+  "branch": "feat/mc-20260916/wire-b",
+  "status": "done",
+  "base_sha": "9573084ec81837b73dcff14ac0e36bc7f943166a",
+  "head_sha": "e00255f8e516488ed66c749a82add002ab5bf2a9",
+  "commits": [
+    {
+      "sha": "8c04d3a93772ea8dbb52b724942b801bd9f32c6b",
+      "message": "client: add xp bar, enchanting screen and multiplayer panel"
+    },
+    {
+      "sha": "286d8657f05e2de8d2d5d08b3e7b702630f81599",
+      "message": "game: wire nether travel, xp, enchanting, farming and multiplayer"
+    },
+    {
+      "sha": "e00255f8e516488ed66c749a82add002ab5bf2a9",
+      "message": "e2e: cover xp gain, crop growth and nether portal travel"
+    }
+  ],
+  "files_changed": [
+    "apps/game/src/game/dimensions.ts",
+    "apps/game/src/game/multiplayer.ts",
+    "apps/game/src/game/progression.ts",
+    "apps/game/src/main.ts",
+    "apps/game/src/player.ts",
+    "apps/game/src/registries.ts",
+    "apps/game/src/ui-bridge.ts",
+    "apps/game/src/world/chunkWorld.ts",
+    "apps/game/tsconfig.json",
+    "apps/game/vite.config.ts",
+    "packages/client/src/ui/debug.ts",
+    "packages/client/src/ui/enchanting.ts",
+    "packages/client/src/ui/hud.ts",
+    "packages/client/src/ui/index.ts",
+    "packages/client/src/ui/multiplayer.ts",
+    "packages/client/src/ui/snapshot.ts",
+    "packages/client/src/ui/styles.ts",
+    "packages/client/src/ui/types.ts",
+    "tests/e2e/specs/farming.spec.ts",
+    "tests/e2e/specs/nether.spec.ts",
+    "tests/e2e/specs/progression.spec.ts",
+    "tests/e2e/src/harness.ts"
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "de5c18e3ff004693",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-tsc.log"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "b4afc9e5665a447e",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-lint.log"
+    },
+    {
+      "name": "unit tests",
+      "command": "pnpm -r test",
+      "job_id": "9b5d2f3f50254aee",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-test.log"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "07357a3906c8400a",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-build.log"
+    },
+    {
+      "name": "bundle size",
+      "command": "pnpm size",
+      "job_id": "2a391a0176b3488e",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-size.log"
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm test:e2e",
+      "job_id": "bd8f48a6c5604a40",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-e2e.log"
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "93acd4ed40ca4e51",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "/tmp/gate-bench.log"
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": "AUDIT of apps/game at the integration head. Already reachable from the app: particles (break and place bursts, batched upload), touch controls (settings toggle plus on-screen pad), and village generation (implicit, the generator decorates villages during world gen). NOT reachable: Nether dimension and portal travel, xp orbs and any level display, the enchanting table, farming (till, plant, grow, harvest), animal breeding, and the multiplayer client path against apps/server. Three root blockers explained all of them: v2 blocks were absent from the default BLOCKS registry so no v2 block could be placed or broken; v2 items existed only behind createV2ItemRegistry() so no v2 tool or seed could be held; and @voxelcraft/net was not reachable from apps/game so the client had no transport.\n\nWIRED IN THIS BRANCH. apps/game/src/registries.ts merges the v2 block and item registries into the runtime registries the app already used. apps/game/src/game/dimensions.ts owns one ChunkWorld per dimension plus portal travel, frame building and landing search. apps/game/src/game/progression.ts owns the xp state and orb pool, the crop field, trampling, enchant offers and the harvest path. apps/game/src/game/multiplayer.ts owns the opt-in client connection to apps/server. main.ts drives all of it from the existing frame loop: a fixed-step runSim with a catch-up limit, orb collection at the player, a dimension sync that retargets the player runtime and clears the streaming and mesher pools, and a single use path for right click and touch use that tills soil, plants seeds, harvests mature crops, lights portals and opens the enchanting table. The v2 kit is in the creative hotbar so every newly wired feature is reachable with the normal key bindings. The HUD gained an xp bar (test ids xp and xp-level), the debug overlay gained dimension, xp, farm, herd and net rows, and two screens were added to the existing ui layer (enchanting, multiplayer panel). Single player stays the default; the client only dials apps/server when the multiplayer panel is toggled on.\n\nDETERMINISM. No gameplay roll was added or changed. Growth, portal linking and enchant offers all come from the existing pure (seed, tick, position) helpers in packages/gameplay and packages/sim, so a fixed seed still replays identically. The new advanceTicks test hook only drives the existing fixed-step schedule one tick at a time, clamped to 2000 ticks. No existing test was weakened or deleted and no contract budget was lowered.\n\nWORKAROUND. apps/game had no dependency edge to @voxelcraft/net, and pnpm-lock.yaml and the root package.json are off limits for this task, so the net client is reached through a tsconfig path plus a matching vite resolve alias to packages/net/src. That keeps the change inside owned paths. Whoever owns package.json should replace it with a real workspace dependency. Bundle size after the change is raw=1035805 gzip=451401 and pnpm size still exits 0.\n\nGAPS, reported rather than half wired. Animal breeding is still not reachable from the app: the breeding APIs need mob entities spawned and ticked in the client world, which lives in packages/sim and apps/server, both off limits here. Nether edits are also deliberately not persisted, because the save format (SAVE_VERSION 1 in packages/core-types) has no per-dimension chunk namespace; adding one is a contract change, so only the Overworld is written back and the Nether is regenerated per session.\n\nE2E ADDED. tests/e2e/specs/progression.spec.ts (breaking ore grants xp, spawns particles and the HUD paints the level), farming.spec.ts (till, plant, 2000 deterministic ticks to maturity, harvest clears the plot) and nether.spec.ts (portal travel into the Nether and back through the return frame). All three assert zero console errors and zero console warnings. The shared harness gained the typings and boot/advance helpers they use, and the existing specs were left untouched.\n\nEXECUTION. All work ran in gha mcp env linux-92tbd3nk. No child sessions were spawned: the remaining work was one serialized wiring path through main.ts, where parallel writers would have collided on a single file. Every gate below ran on head_sha with a clean tree; this report is committed on top as a docs-only commit, so the pushed branch head is one commit ahead of head_sha."
+}

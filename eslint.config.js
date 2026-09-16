@@ -34,4 +34,9 @@ export default tseslint.config(
       '@typescript-eslint/ban-ts-comment': 'off',
     },
   },
+  {
+    files: ['**/*.cjs'],
+    languageOptions: { sourceType: 'commonjs' },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
 )
