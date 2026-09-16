@@ -15,3 +15,5 @@ export * from './crafting'
 export * from './persistence'
 // Redstone wire propagation, inputs, doors, lamps and pistons.
 export * from './redstone'
+// Experience orbs, the level curve and the xp gains that feed them.
+export * from './experience'
