@@ -16,8 +16,6 @@ export interface ChunkColumn {
 	readonly blocks: Uint16Array
 	/** Packed fluid byte per voxel, CHUNK_VOLUME long. */
 	readonly fluids: Uint8Array
-	/** Bumped on every accepted edit, so a streamer can detect a stale send. */
-	revision: number
 }
 
 export interface ServerWorld {
@@ -25,12 +23,18 @@ export interface ServerWorld {
 	readonly dimension: DimensionId
 	/** Generates the column on first touch. Never returns undefined. */
 	chunk(cx: number, cz: number): ChunkColumn
+	/**
+	 * True when the column is already resident. Never generates, so a rejected
+	 * client message can ask "do we already hold this?" instead of paying for a
+	 * column the client was never allowed to ask about.
+	 */
+	hasColumn(cx: number, cz: number): boolean
 	block(x: number, y: number, z: number): BlockId
 	/** False when the coordinate is outside the buildable world. */
 	setBlock(x: number, y: number, z: number, block: BlockId): boolean
 	/** First free y above the highest non-air block of the column. */
 	surfaceY(x: number, z: number): number
-	/** How many columns have been generated so far. */
+	/** How many columns are resident right now. Bounded by the store's cap. */
 	readonly loadedChunks: number
 }
 
@@ -59,6 +63,12 @@ export interface DesiredMove {
 	pitch: number
 }
 
-export type EditRejection = 'out_of_world' | 'out_of_reach' | 'unknown_block' | 'stale_tick'
+export type EditRejection =
+	| 'out_of_world'
+	| 'out_of_reach'
+	/** Outside the columns the client is streamed, so outside its business. */
+	| 'out_of_stream'
+	| 'unknown_block'
+	| 'stale_tick'
 
 export type EditVerdict = { ok: true; block: BlockId } | { ok: false; reason: EditRejection }
