@@ -5,7 +5,9 @@
  * tools can embed a server instead of shelling out to main.ts.
  */
 export * from './gameServer'
+export * from './inputGate'
 export * from './movement'
+export * from './rateLimit'
 export * from './start'
 export * from './stream'
 export * from './tick'
