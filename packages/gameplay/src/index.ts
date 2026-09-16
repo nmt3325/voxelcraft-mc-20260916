@@ -31,3 +31,9 @@ export * from './enchanting'
 // roll, the farming one is the positional crop roll.
 export { fortuneBonus } from './enchanting'
 export { fortuneBonus as cropFortuneBonus } from './farming'
+
+// v2 item definitions plus the recipes that turn the harvest into food.
+export * from './v2items'
+
+// Animal breeding rules: love mode, babies, growth and parent cooldowns.
+export * from './breeding'
