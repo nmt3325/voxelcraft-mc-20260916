@@ -13,13 +13,6 @@ const hasGeneratedAssets = existsSync(`${generatedDir}/atlas.json`)
 
 export default defineConfig({
 	base: './',
-	// The game speaks the protocol but is not a dependency of @voxelcraft/net,
-	// so the browser safe half is bundled straight from source.
-	resolve: {
-		alias: {
-			'@voxelcraft/net': fileURLToPath(new URL('../../packages/net/src/index.ts', import.meta.url)),
-		},
-	},
 	publicDir: hasGeneratedAssets ? generatedDir : false,
 	define: { __VC_HAS_ASSETS__: JSON.stringify(hasGeneratedAssets) },
 	build: {
