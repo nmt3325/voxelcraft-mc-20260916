@@ -667,7 +667,7 @@ async function boot(assets: GameAssets): Promise<void> {
 		const bz = hit.block.z
 		if (world.blockAt(bx, by, bz) === BLOCK_V2.ENCHANTING_TABLE) {
 			progression.openTable(farmWorld, player.inventory, bx, by, bz)
-			screen = 'enchanting'
+			setScreen('enchanting')
 			soundEvents.play(SOUND_EVENT.EnchantStart)
 			return
 		}
