@@ -1,0 +1,220 @@
+{
+  "task": "L1-F world subtree for run mc-20260916: dimension aware generator, Nether dimension, portal support on the world side, deterministic village generation, and generator performance item H-06",
+  "branch": "feat/mc-20260916/v2-world",
+  "status": "done",
+  "base_sha": "965d7cb4b76414e418627011e10b87f9655f84b6",
+  "head_sha": "7c22b8959ed1b390a308f71ed7fc98dab8b72a6d",
+  "commits": [
+    "7c22b89 feat(world): run the nether decoration pass from the dimension pipeline",
+    "ab39d99 merge(world): integrate L2 nether decoration pass",
+    "c683401 merge(world): integrate L2 perf ore pass and perf regression test",
+    "fba28d4 feat(world): wire village decoration and portals into the world entry point",
+    "b41eb54 test(world): cover nether decoration determinism and shell invariants",
+    "2bbfb32 feat(world): add nether decoration pass with quartz, glowstone and patches",
+    "f9e9a1e test(world): pin overworld chunk hashes and measure chunk generation",
+    "e223c1e perf(world): flatten the ore table and inline the vein write",
+    "bd6982d merge(world): integrate L2 portal frame validation and linking",
+    "b76a56e merge(world): integrate L2 village planner and builder",
+    "456f98f merge(world): integrate L2 perf work on caves and column fill",
+    "901a177 perf(world): read the frozen terrain and climate tables once",
+    "a649273 test(world): cover village determinism, siting and decoration",
+    "7ce866f feat(world): add deterministic village planner and builder",
+    "c45369f perf(world): bind the hot noise symbols and type the gradient tables",
+    "5e66473 test(world): cover portal frames, linking and landings",
+    "425e976 feat(world): add portal frame validation and dimension linking",
+    "443dd5a perf(world): fill the stone body and the ocean layer by layer",
+    "4a29f71 style(world): run prettier on caves.ts",
+    "3730494 perf(world): hoist cave trilinear invariants out of the voxel loop",
+    "e39ffed docs(world): add interim v2 world report",
+    "5946241 test(world): pin nether golden chunks in their own fixture block",
+    "420f4ad feat(world): dimension seam and nether bulk terrain"
+  ],
+  "files_changed": {
+    "summary": "30 files changed, 4689 insertions, 301 deletions against base_sha",
+    "added": [
+      "docs/reports/v2-world.json",
+      "packages/world/src/dimension.ts",
+      "packages/world/src/nether/terrain.ts",
+      "packages/world/src/nether/decoration.ts",
+      "packages/world/src/nether/index.ts",
+      "packages/world/src/portal/frame.ts",
+      "packages/world/src/portal/link.ts",
+      "packages/world/src/portal/index.ts",
+      "packages/world/src/village/layout.ts",
+      "packages/world/src/village/planner.ts",
+      "packages/world/src/village/builder.ts",
+      "packages/world/src/village/index.ts",
+      "packages/world/src/__tests__/world-f.nether-terrain.test.ts",
+      "packages/world/src/__tests__/world-f.nether-decoration.test.ts",
+      "packages/world/src/__tests__/world-f.nether-golden.test.ts",
+      "packages/world/src/__tests__/world-f.village.test.ts",
+      "packages/world/src/__tests__/world-f.portal.test.ts",
+      "packages/world/src/__tests__/world-f.perf.test.ts",
+      "packages/world/src/__tests__/world-f.wiring.test.ts"
+    ],
+    "modified": [
+      "packages/world/src/index.ts",
+      "packages/world/src/internal.ts",
+      "packages/world/src/features/caves.ts",
+      "packages/world/src/features/ores.ts",
+      "packages/world/src/noise/perlin.ts",
+      "packages/world/src/noise/fbm.ts",
+      "packages/world/src/noise/climate.ts",
+      "packages/world/src/terrain/column.ts",
+      "packages/world/src/terrain/height.ts",
+      "packages/world/scripts/update-golden.ts",
+      "packages/world/src/__tests__/golden.json"
+    ]
+  },
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "2018a3463fce422c",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "runtime 39.07 s, no diagnostics emitted, final line TSC_ALL=0"
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "6fd019d428e24f1f",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "Scope: 9 of 10 workspace projects, every project reported Done, final line LINT_ALL=0"
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "77e1750dfe384cb7",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "packages/world 12 test files and 176 tests passed; core-types 46, assets-gen 23, sim 111, gameplay 131, client 55, apps/game 9, tests/e2e 3; final line TEST_ALL=0"
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "ed9a217f85cd4873",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets-gen wrote 73 textures and 19 sounds plus a 22345 byte atlas, vite transformed 162 modules and built in 1.41 s, final line BUILD=0"
+    }
+  ],
+  "contract_changes_needed": [],
+  "performance": {
+    "item": "H-06 vitest chunk generation average",
+    "budget_constants_untouched": {
+      "PERF.chunkGenBudgetMs": 4,
+      "BENCH.chunkGenAvgMsMax": 6,
+      "BENCH.failFactor": 3
+    },
+    "before": {
+      "measured_at": "base_sha 965d7cb4 on runner linux-x33ywj0n, before any change",
+      "overworld_chunkgen_avg_ms": 10.836,
+      "world_c_chunkgen_avg_ms": 6.104,
+      "world_c_decorate_avg_ms": 0.275,
+      "note": "the parent brief quoted 11.1 ms; this runner measured 10.836 ms for the same suite",
+      "job_id": "2bbc54e605f148a3"
+    },
+    "after_quiet_runner": {
+      "job_id": "9b3ebb23fe0b40ca",
+      "method": "one vitest file per invocation so no other workspace project runs in parallel",
+      "overworld_chunkgen_avg_ms": 2.193,
+      "world_c_chunkgen_avg_ms": 2.313,
+      "world_c_decorate_avg_ms": 0.225,
+      "world_f_median_of_three_ms": 2.236,
+      "world_f_rounds_ms": [
+        2.76,
+        2.162,
+        2.236
+      ],
+      "nether_chunkgen_avg_ms": 6.452
+    },
+    "after_under_full_repo_test_load": {
+      "job_id": "77e1750dfe384cb7",
+      "method": "pnpm -r test runs the nine workspace projects in parallel, so these numbers include contention",
+      "overworld_chunkgen_avg_ms": 6.953,
+      "world_c_chunkgen_avg_ms": 5.225,
+      "world_c_decorate_avg_ms": 0.395,
+      "world_f_median_of_three_ms": 5.813,
+      "nether_chunkgen_avg_ms": 10.217
+    },
+    "result": "overworld chunk generation went from 10.836 ms to 2.193 ms, under the 4 ms budget and well under the 6 ms bench maximum",
+    "changes": [
+      "hoisted the cave trilinear invariants out of the voxel loop",
+      "filled the stone body and the ocean layer by layer instead of per voxel",
+      "bound the hot noise symbols and typed the gradient tables",
+      "read the frozen terrain and climate tables once per chunk",
+      "flattened the ore table and inlined the vein write"
+    ],
+    "remaining_headroom": [
+      "inline sampleColumn into sampleChunk",
+      "memoise the perlin3Raw gradient lookups, which is the main nether cost"
+    ]
+  },
+  "required_tests": {
+    "nether column determinism for two seeds": "src/__tests__/world-f.nether-terrain.test.ts",
+    "lava sea, roof and floor invariants": "src/__tests__/world-f.nether-terrain.test.ts",
+    "portal frame validation and link mapping": "src/__tests__/world-f.portal.test.ts",
+    "village plan determinism and building count bounds": "src/__tests__/world-f.village.test.ts",
+    "village never in disallowed biomes": "src/__tests__/world-f.village.test.ts",
+    "performance measurement": "src/__tests__/world-f.perf.test.ts with world-a.terrain and world-c.features",
+    "nether decoration determinism and shell invariants": "src/__tests__/world-f.nether-decoration.test.ts",
+    "golden chunk hashes": "src/__tests__/world-f.nether-golden.test.ts",
+    "public pipeline wiring": "src/__tests__/world-f.wiring.test.ts"
+  },
+  "children": [
+    {
+      "role": "nether terrain decoration",
+      "branch": "feat/mc-20260916/v2-world-nether-deco",
+      "head_sha": "b41eb542cf7f2be6c8736abbb37323bd146255b4",
+      "token": "NETHER_DECO_DONE",
+      "gate_job_ids": [
+        "3a9492bfeb4f4c68",
+        "2f7922b082874898",
+        "b3b1dab2bfb54c66"
+      ],
+      "merged_as": "ab39d99"
+    },
+    {
+      "role": "villages and structures",
+      "branch": "feat/mc-20260916/v2-world-village",
+      "head_sha": "a64927382e30568aeb1c7e99978a56cff82b5c48",
+      "token": "VILLAGE_DONE",
+      "gate_job_ids": [
+        "571877ca0d5d437b",
+        "70b927dcea904324"
+      ],
+      "merged_as": "b76a56e"
+    },
+    {
+      "role": "portal frames and linking",
+      "branch": "feat/mc-20260916/v2-world-portal",
+      "head_sha": "5e6647345edb17f477a150d2129a4e7c6d39ea56",
+      "token": "PORTAL_DONE",
+      "merged_as": "bd6982d"
+    },
+    {
+      "role": "generator performance H-06",
+      "branch": "feat/mc-20260916/v2-world-perf",
+      "head_sha": "f9e9a1ea21b29d42b587c2c372e468c7d29b5595",
+      "token": "PERF_DONE",
+      "merged_as": "456f98f and c683401"
+    }
+  ],
+  "notes": [
+    "The report commit sits on top of head_sha on the same branch; head_sha is the last implementation commit.",
+    "Every existing overworld golden hash is byte identical to base_sha. This was verified after each integration by diffing the fixture entries, which reported OVERWORLD_ENTRIES_SAME True.",
+    "The six nether golden entries are new. They were re-pinned once, when the decoration pass moved inside generateChunk, with golden:update touching only the netherEntries block (6 insertions, 6 deletions).",
+    "Nether chunk generation is 6.452 ms on a quiet runner, just above the 6 ms bench maximum but far inside the suite assertion of bench maximum times failFactor. The H-06 budget item was the overworld average, which is now 2.193 ms. The remaining nether cost is the 3D cave noise; memoising the perlin3Raw gradients is the next step.",
+    "The frozen caveThreshold 0.42 is compared against an amplified fbm3 value. A local non frozen constant NETHER_NOISE.amplitude 4.5 in packages/world scales the normalised noise, because the raw normalised fbm3 never reaches 0.42 and no cave would ever open. No frozen value was changed.",
+    "Decoration rates measured over many chunks: quartz 0.170 and 0.172 against the frozen 0.18 because veins are column local, soul sand about 0.194 because magma rolls first, magma about 0.09 globally because the chance tapers with height away from the lava shore, glowstone exactly 2 clusters per chunk.",
+    "Village decoration runs after vegetation inside a chunk, so a tree that spills across a chunk border can overwrite a village voxel depending on chunk visit order. The village pass itself is order independent and is covered by its own suite; the wiring suite asserts presence rather than exact order independence.",
+    "PORTAL.lightLevel 11, PORTAL.travelDelayTicks 80 and PORTAL.cooldownTicks 300 are not consumed by packages/world. They belong to whoever owns portal block light emission and travel timing in sim or gameplay. No shared contract change is requested.",
+    "Only packages/world and this report file were touched. The four L2 children worked in their own clones of the same environment, created no environments, and all their work was integrated by L1-F on this branch."
+  ]
+}

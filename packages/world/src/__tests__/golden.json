@@ -51,5 +51,51 @@
 			"blocks": 3740249551,
 			"fluids": 2484712597
 		}
+	],
+	"netherGenVersion": 1,
+	"netherGenerator": "createWorldGenerator(seed, DIMENSION.Nether)",
+	"netherEntries": [
+		{
+			"seed": 1337,
+			"cx": 0,
+			"cz": 0,
+			"blocks": 3178565544,
+			"fluids": 2467138437
+		},
+		{
+			"seed": 1337,
+			"cx": 5,
+			"cz": -3,
+			"blocks": 1046905013,
+			"fluids": 2628816069
+		},
+		{
+			"seed": 1337,
+			"cx": -4,
+			"cz": 9,
+			"blocks": 2398810429,
+			"fluids": 3939509381
+		},
+		{
+			"seed": 20260916,
+			"cx": 0,
+			"cz": 0,
+			"blocks": 344872872,
+			"fluids": 3366744997
+		},
+		{
+			"seed": 20260916,
+			"cx": -4,
+			"cz": 9,
+			"blocks": 3469732882,
+			"fluids": 1708561317
+		},
+		{
+			"seed": 20260916,
+			"cx": 31,
+			"cz": 29,
+			"blocks": 1066928579,
+			"fluids": 862489541
+		}
 	]
 }

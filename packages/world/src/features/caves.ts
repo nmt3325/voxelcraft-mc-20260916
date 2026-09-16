@@ -31,17 +31,25 @@
  *      with a one-voxel ceiling,
  *   3. both thresholds fade out towards the crust and towards bedrock, so a
  *      cave tapers off instead of slicing the last blocks open.
+ *
+ * H-06 hot-path notes. Every change below is value preserving, never a change
+ * of the arithmetic itself: no float operation is reassociated, reordered or
+ * turned into a reciprocal multiplication.
+ *   - The trilinear weights of a column (tx, tz) and of a y level (iy0, ty) are
+ *     loop invariants, so the eight corner values, the four x interpolations
+ *     and the two z interpolations of a lattice cell are computed once per run
+ *     of voxels inside that cell instead of once per voxel. What is left per
+ *     voxel is `z0 + (z1 - z0) * ty`, with the subtraction hoisted as well.
+ *   - Lattice indices are reached through precomputed corner offsets rather
+ *     than a multiply-heavy index helper.
+ *   - The fade bias, the per-column lattice weights and the carvable block
+ *     predicate are precomputed tables; the bias table stores exactly the
+ *     expression the scalar version evaluated.
+ *   - Frozen constants are read into module locals once.
  */
-import {
-	BEDROCK_LAYERS,
-	BLOCK,
-	CHUNK_X,
-	CHUNK_Z,
-	SEA_LEVEL,
-	blockIndex,
-} from '@voxelcraft/core-types'
+import { BEDROCK_LAYERS, BLOCK, CHUNK_X, CHUNK_Z, SEA_LEVEL } from '@voxelcraft/core-types'
 import type { CaveCarver, TerrainContext } from '../internal'
-import { CAVES, SALT, columnIndex, isCarvableBlock } from '../internal'
+import { CAVES, SALT, isCarvableBlock } from '../internal'
 
 /** Extra crust under a submerged column, on top of CAVES.surfaceMargin. */
 const SUBMERGED_SEAL = 6
@@ -58,12 +66,45 @@ const TUNNEL_FADE_SCALE = 0.3
 
 const HALO = CHUNK_X + 2
 
+/* Frozen constants, read once instead of per voxel. Same values. */
+const MIN_Y = CAVES.minY
+const MAX_Y = CAVES.maxY
+const STEP = CAVES.latticeStep
+const SURFACE_MARGIN = CAVES.surfaceMargin
+const CHEESE_THRESHOLD = CAVES.cheeseThreshold
+const TUNNEL_THRESHOLD = CAVES.tunnelThreshold
+const SQUASH = CAVES.verticalSquash
+const CHEESE_FBM = CAVES.cheese
+const TUNNEL_FBM = CAVES.tunnel
+const SALT_CHEESE = SALT.caveCheese
+const SALT_TUNNEL_A = SALT.caveTunnelA
+const SALT_TUNNEL_B = SALT.caveTunnelB
+const AIR = BLOCK.AIR
+
+/** FADE_BIAS * (1 - d / FADE_BLOCKS) for every distance inside the band. */
+const FADE_BY_DISTANCE = ((): Float64Array => {
+	const table = new Float64Array(FADE_BLOCKS)
+	for (let d = 0; d < FADE_BLOCKS; d++) table[d] = FADE_BIAS * (1 - d / FADE_BLOCKS)
+	return table
+})()
+
+/**
+ * isCarvableBlock as a table, built by asking the real predicate, so the two can
+ * never disagree. Ids outside the table fall back to the predicate itself.
+ */
+const CARVABLE_LIMIT = 1024
+const CARVABLE = ((): Uint8Array => {
+	const table = new Uint8Array(CARVABLE_LIMIT)
+	for (let id = 0; id < CARVABLE_LIMIT; id++) table[id] = isCarvableBlock(id) ? 1 : 0
+	return table
+})()
+
 export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 	const noise = terrain.noise
-	const step = CAVES.latticeStep
+	const step = STEP
 	const nx = CHUNK_X / step + 1
 	const nz = CHUNK_Z / step + 1
-	const ny = Math.floor((CAVES.maxY - CAVES.minY) / step) + 2
+	const ny = Math.floor((MAX_Y - MIN_Y) / step) + 2
 	const cellsX = nx - 1
 	const cellsZ = nz - 1
 	const cellsY = ny - 1
@@ -79,7 +120,45 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 	const haloTop = new Int32Array(HALO * HALO)
 	const tops = new Int32Array(CHUNK_X * CHUNK_Z)
 	/** Bedrock always wins over caves, whatever CAVES.minY says. */
-	const yFloor = BEDROCK_LAYERS > CAVES.minY + 1 ? BEDROCK_LAYERS : CAVES.minY + 1
+	const yFloor = BEDROCK_LAYERS > MIN_Y + 1 ? BEDROCK_LAYERS : MIN_Y + 1
+	/** Lattice index strides: +1 in x, +nx in z, +nx*nz in y. */
+	const zStride = nx
+	const yStride = nx * nz
+
+	/* Per-voxel lattice weights. x and z only ever run over one chunk and y over
+	 * the carvable band, so every floor and division below happens once here
+	 * instead of once per voxel, with exactly the same values. */
+	const latIx0 = new Int32Array(CHUNK_X)
+	const latTx = new Float64Array(CHUNK_X)
+	const latDx = new Int32Array(CHUNK_X)
+	const latCellX = new Int32Array(CHUNK_X)
+	for (let x = 0; x < CHUNK_X; x++) {
+		const fx = x / step
+		const ix0 = Math.floor(fx)
+		latIx0[x] = ix0
+		latTx[x] = fx - ix0
+		latDx[x] = (ix0 + 1 < nx ? ix0 + 1 : ix0) - ix0
+		latCellX[x] = ix0 < cellsX ? ix0 : cellsX - 1
+	}
+	const latIz0 = new Int32Array(CHUNK_Z)
+	const latTz = new Float64Array(CHUNK_Z)
+	const latDz = new Int32Array(CHUNK_Z)
+	const latCellZ = new Int32Array(CHUNK_Z)
+	for (let z = 0; z < CHUNK_Z; z++) {
+		const fz = z / step
+		const iz0 = Math.floor(fz)
+		latIz0[z] = iz0
+		latTz[z] = fz - iz0
+		latDz[z] = ((iz0 + 1 < nz ? iz0 + 1 : iz0) - iz0) * zStride
+		latCellZ[z] = iz0 < cellsZ ? iz0 : cellsZ - 1
+	}
+	const latIy0 = new Int32Array(MAX_Y + 1)
+	const latTy = new Float64Array(MAX_Y + 1)
+	for (let y = 0; y <= MAX_Y; y++) {
+		const iy0 = Math.floor((y - MIN_Y) / step)
+		latIy0[y] = iy0
+		latTy[y] = (y - MIN_Y) / step - iy0
+	}
 
 	function li(ix: number, iy: number, iz: number): number {
 		return (iy * nz + iz) * nx + ix
@@ -93,22 +172,9 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 		return (hz + 1) * HALO + (hx + 1)
 	}
 
-	function cheeseAt(wx: number, wy: number, wz: number): number {
-		return noise.fbm3(SALT.caveCheese, wx, wy * CAVES.verticalSquash, wz, CAVES.cheese)
-	}
-
-	function absTunnelA(wx: number, wy: number, wz: number): number {
-		const a = noise.fbm3(SALT.caveTunnelA, wx, wy * CAVES.verticalSquash, wz, CAVES.tunnel)
-		return a < 0 ? -a : a
-	}
-
-	function absTunnelB(wx: number, wy: number, wz: number): number {
-		const b = noise.fbm3(SALT.caveTunnelB, wx, wy * CAVES.verticalSquash, wz, CAVES.tunnel)
-		return b < 0 ? -b : b
-	}
-
 	/** Completes the exact tunnel value on the eight corners of one cell. */
 	function fillTunnelCorners(
+		base: number,
 		ix: number,
 		iy: number,
 		iz: number,
@@ -116,16 +182,16 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 		bz: number,
 	): void {
 		for (let dy = 0; dy <= 1; dy++) {
+			const wy = MIN_Y + (iy + dy) * step
+			const sy = wy * SQUASH
 			for (let dz = 0; dz <= 1; dz++) {
+				const wz = bz + (iz + dz) * step
 				for (let dx = 0; dx <= 1; dx++) {
-					const k = li(ix + dx, iy + dy, iz + dz)
+					const k = base + dx + dz * zStride + dy * yStride
 					if (tunnelReady[k] === 1) continue
 					const absA = absAField[k]
-					const absB = absTunnelB(
-						bx + (ix + dx) * step,
-						CAVES.minY + (iy + dy) * step,
-						bz + (iz + dz) * step,
-					)
+					const b = noise.fbm3(SALT_TUNNEL_B, bx + (ix + dx) * step, sy, wz, TUNNEL_FBM)
+					const absB = b < 0 ? -b : b
 					tunnelField[k] = 1 - (absA > absB ? absA : absB)
 					tunnelReady[k] = 1
 				}
@@ -135,76 +201,59 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 
 	/** Highest voxel a column may lose, before the neighbour erosion. */
 	function crustTop(surfaceY: number): number {
-		let top = surfaceY - CAVES.surfaceMargin
+		let top = surfaceY - SURFACE_MARGIN
 		if (surfaceY < SEA_LEVEL) {
 			top -= SUBMERGED_SEAL
 		} else if (surfaceY <= SEA_LEVEL + SHORE_BAND && top > SHORE_CEILING) {
 			top = SHORE_CEILING
 		}
-		return top > CAVES.maxY ? CAVES.maxY : top
+		return top > MAX_Y ? MAX_Y : top
 	}
 
-	function edgeBias(y: number, top: number): number {
-		const dTop = top - y
-		const dFloor = y - yFloor
-		const d = dTop < dFloor ? dTop : dFloor
-		if (d >= FADE_BLOCKS) return 0
-		return FADE_BIAS * (1 - d / FADE_BLOCKS)
-	}
-
-	function max8(field: Float32Array, ix: number, iy: number, iz: number): number {
-		let m = field[li(ix, iy, iz)]
-		for (let dy = 0; dy <= 1; dy++) {
-			for (let dz = 0; dz <= 1; dz++) {
-				for (let dx = 0; dx <= 1; dx++) {
-					const v = field[li(ix + dx, iy + dy, iz + dz)]
-					if (v > m) m = v
-				}
-			}
-		}
+	/** Largest of the eight corner values of a cell whose base corner is `o`. */
+	function max8(field: Float32Array, o: number): number {
+		const oz = o + zStride
+		const oy = o + yStride
+		const oyz = oy + zStride
+		let m = field[o]
+		let v = field[o + 1]
+		if (v > m) m = v
+		v = field[oz]
+		if (v > m) m = v
+		v = field[oz + 1]
+		if (v > m) m = v
+		v = field[oy]
+		if (v > m) m = v
+		v = field[oy + 1]
+		if (v > m) m = v
+		v = field[oyz]
+		if (v > m) m = v
+		v = field[oyz + 1]
+		if (v > m) m = v
 		return m
 	}
 
-	function min8(field: Float32Array, ix: number, iy: number, iz: number): number {
-		let m = field[li(ix, iy, iz)]
-		for (let dy = 0; dy <= 1; dy++) {
-			for (let dz = 0; dz <= 1; dz++) {
-				for (let dx = 0; dx <= 1; dx++) {
-					const v = field[li(ix + dx, iy + dy, iz + dz)]
-					if (v < m) m = v
-				}
-			}
-		}
+	/** Smallest of the eight corner values of a cell whose base corner is `o`. */
+	function min8(field: Float32Array, o: number): number {
+		const oz = o + zStride
+		const oy = o + yStride
+		const oyz = oy + zStride
+		let m = field[o]
+		let v = field[o + 1]
+		if (v < m) m = v
+		v = field[oz]
+		if (v < m) m = v
+		v = field[oz + 1]
+		if (v < m) m = v
+		v = field[oy]
+		if (v < m) m = v
+		v = field[oy + 1]
+		if (v < m) m = v
+		v = field[oyz]
+		if (v < m) m = v
+		v = field[oyz + 1]
+		if (v < m) m = v
 		return m
-	}
-
-	function tri(
-		field: Float32Array,
-		ix0: number,
-		ix1: number,
-		iy0: number,
-		iy1: number,
-		iz0: number,
-		iz1: number,
-		tx: number,
-		ty: number,
-		tz: number,
-	): number {
-		const a = field[li(ix0, iy0, iz0)]
-		const b = field[li(ix1, iy0, iz0)]
-		const c = field[li(ix0, iy0, iz1)]
-		const d = field[li(ix1, iy0, iz1)]
-		const e = field[li(ix0, iy1, iz0)]
-		const f = field[li(ix1, iy1, iz0)]
-		const g = field[li(ix0, iy1, iz1)]
-		const h = field[li(ix1, iy1, iz1)]
-		const x00 = a + (b - a) * tx
-		const x01 = c + (d - c) * tx
-		const x10 = e + (f - e) * tx
-		const x11 = g + (h - g) * tx
-		const z0 = x00 + (x01 - x00) * tz
-		const z1 = x10 + (x11 - x10) * tz
-		return z0 + (z1 - z0) * ty
 	}
 
 	return {
@@ -219,9 +268,7 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 				const inZ = hz >= 0 && hz < CHUNK_Z
 				for (let hx = -1; hx <= CHUNK_X; hx++) {
 					const inside = inZ && hx >= 0 && hx < CHUNK_X
-					const surfaceY = inside
-						? heights[columnIndex(hx, hz)]
-						: terrain.surfaceYAt(bx + hx, bz + hz)
+					const surfaceY = inside ? heights[(hz << 4) | hx] : terrain.surfaceYAt(bx + hx, bz + hz)
 					haloTop[haloIndex(hx, hz)] = crustTop(surfaceY)
 				}
 			}
@@ -238,25 +285,26 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 					if (east < top) top = east
 					if (north < top) top = north
 					if (south < top) top = south
-					tops[columnIndex(x, z)] = top
+					tops[(z << 4) | x] = top
 					if (top > maxTop) maxTop = top
 				}
 			}
 			if (maxTop < yFloor) return
 
 			// Only the lattice levels this chunk can actually read are filled.
-			let levels = Math.floor((maxTop - CAVES.minY) / step) + 1
+			let levels = Math.floor((maxTop - MIN_Y) / step) + 1
 			if (levels > ny - 1) levels = ny - 1
-			tunnelReady.fill(0, 0, (levels + 1) * nz * nx)
+			tunnelReady.fill(0, 0, (levels + 1) * yStride)
 			for (let iy = 0; iy <= levels; iy++) {
-				const wy = CAVES.minY + iy * step
+				const sy = (MIN_Y + iy * step) * SQUASH
 				for (let iz = 0; iz < nz; iz++) {
 					const wz = bz + iz * step
-					for (let ix = 0; ix < nx; ix++) {
+					let k = li(0, iy, iz)
+					for (let ix = 0; ix < nx; ix++, k++) {
 						const wx = bx + ix * step
-						const k = li(ix, iy, iz)
-						cheeseField[k] = cheeseAt(wx, wy, wz)
-						absAField[k] = absTunnelA(wx, wy, wz)
+						cheeseField[k] = noise.fbm3(SALT_CHEESE, wx, sy, wz, CHEESE_FBM)
+						const a = noise.fbm3(SALT_TUNNEL_A, wx, sy, wz, TUNNEL_FBM)
+						absAField[k] = a < 0 ? -a : a
 					}
 				}
 			}
@@ -264,61 +312,101 @@ export function createCaveCarver(terrain: TerrainContext): CaveCarver {
 				for (let iz = 0; iz < cellsZ; iz++) {
 					for (let ix = 0; ix < cellsX; ix++) {
 						const k = cellIndex(ix, iy, iz)
-						cheeseCellMax[k] = max8(cheeseField, ix, iy, iz)
+						const base = li(ix, iy, iz)
+						cheeseCellMax[k] = max8(cheeseField, base)
 						// 1 - min|a| is the largest tunnel value this cell could
 						// reach. Under the threshold it is already excluded, so the
 						// second field stays unsampled.
-						const bound = 1 - min8(absAField, ix, iy, iz)
-						if (bound <= CAVES.tunnelThreshold) {
+						const bound = 1 - min8(absAField, base)
+						if (bound <= TUNNEL_THRESHOLD) {
 							tunnelCellMax[k] = bound
 							continue
 						}
-						fillTunnelCorners(ix, iy, iz, bx, bz)
-						tunnelCellMax[k] = max8(tunnelField, ix, iy, iz)
+						fillTunnelCorners(base, ix, iy, iz, bx, bz)
+						tunnelCellMax[k] = max8(tunnelField, base)
 					}
 				}
 			}
 
 			for (let z = 0; z < CHUNK_Z; z++) {
-				const fz = z / step
-				const iz0 = Math.floor(fz)
-				const tz = fz - iz0
-				const iz1 = iz0 + 1 < nz ? iz0 + 1 : iz0
-				const izCell = iz0 < cellsZ ? iz0 : cellsZ - 1
+				const iz0 = latIz0[z]
+				const tz = latTz[z]
+				const dzOff = latDz[z]
+				const izCell = latCellZ[z]
+				const zBase = z << 4
 				for (let x = 0; x < CHUNK_X; x++) {
-					const fx = x / step
-					const ix0 = Math.floor(fx)
-					const tx = fx - ix0
-					const ix1 = ix0 + 1 < nx ? ix0 + 1 : ix0
-					const ixCell = ix0 < cellsX ? ix0 : cellsX - 1
-					const top = tops[columnIndex(x, z)]
+					const ix0 = latIx0[x]
+					const tx = latTx[x]
+					const dxOff = latDx[x]
+					const ixCell = latCellX[x]
+					const colBase = zBase | x
+					const top = tops[colBase]
 					let y = yFloor
 					while (y <= top) {
-						const iy0 = Math.floor((y - CAVES.minY) / step)
-						const cellTop = CAVES.minY + (iy0 + 1) * step - 1
+						const iy0 = latIy0[y]
+						const cellTop = MIN_Y + (iy0 + 1) * step - 1
 						const runEnd = cellTop < top ? cellTop : top
-						const cell = cellIndex(ixCell, iy0, izCell)
+						const cell = (iy0 * cellsZ + izCell) * cellsX + ixCell
 						// A cell above the tunnel threshold always has its eight exact
 						// corner values filled in, so the interpolation below is safe.
-						const tunnelPossible = tunnelCellMax[cell] > CAVES.tunnelThreshold
-						if (!tunnelPossible && cheeseCellMax[cell] <= CAVES.cheeseThreshold) {
+						const tunnelPossible = tunnelCellMax[cell] > TUNNEL_THRESHOLD
+						if (!tunnelPossible && cheeseCellMax[cell] <= CHEESE_THRESHOLD) {
 							y = runEnd + 1
 							continue
 						}
-						const iy1 = iy0 + 1
+						// Everything except the y weight is constant across the run, so
+						// the eight corner reads and the x/z interpolations happen once.
+						const o000 = (iy0 * nz + iz0) * nx + ix0
+						const o001 = o000 + dzOff
+						const o010 = o000 + yStride
+						const o011 = o010 + dzOff
+						const ca = cheeseField[o000]
+						const cb = cheeseField[o000 + dxOff]
+						const cc = cheeseField[o001]
+						const cd = cheeseField[o001 + dxOff]
+						const ce = cheeseField[o010]
+						const cf = cheeseField[o010 + dxOff]
+						const cg = cheeseField[o011]
+						const ch = cheeseField[o011 + dxOff]
+						const cx00 = ca + (cb - ca) * tx
+						const cx01 = cc + (cd - cc) * tx
+						const cx10 = ce + (cf - ce) * tx
+						const cx11 = cg + (ch - cg) * tx
+						const cheeseBase = cx00 + (cx01 - cx00) * tz
+						const cheeseSpan = cx10 + (cx11 - cx10) * tz - cheeseBase
+						let tunnelBase = 0
+						let tunnelSpan = 0
+						if (tunnelPossible) {
+							const ta = tunnelField[o000]
+							const tb = tunnelField[o000 + dxOff]
+							const tc = tunnelField[o001]
+							const td = tunnelField[o001 + dxOff]
+							const te = tunnelField[o010]
+							const tf = tunnelField[o010 + dxOff]
+							const tg = tunnelField[o011]
+							const th = tunnelField[o011 + dxOff]
+							const tx00 = ta + (tb - ta) * tx
+							const tx01 = tc + (td - tc) * tx
+							const tx10 = te + (tf - te) * tx
+							const tx11 = tg + (th - tg) * tx
+							tunnelBase = tx00 + (tx01 - tx00) * tz
+							tunnelSpan = tx10 + (tx11 - tx10) * tz - tunnelBase
+						}
 						for (; y <= runEnd; y++) {
-							const ty = (y - CAVES.minY) / step - iy0
-							const bias = edgeBias(y, top)
-							const cheese = tri(cheeseField, ix0, ix1, iy0, iy1, iz0, iz1, tx, ty, tz)
-							let carve = cheese > CAVES.cheeseThreshold + bias
+							const ty = latTy[y]
+							const dTop = top - y
+							const dFloor = y - yFloor
+							const d = dTop < dFloor ? dTop : dFloor
+							const bias = d >= FADE_BLOCKS ? 0 : FADE_BY_DISTANCE[d]
+							let carve = cheeseBase + cheeseSpan * ty > CHEESE_THRESHOLD + bias
 							if (!carve && tunnelPossible) {
-								const tunnel = tri(tunnelField, ix0, ix1, iy0, iy1, iz0, iz1, tx, ty, tz)
-								carve = tunnel > CAVES.tunnelThreshold + bias * TUNNEL_FADE_SCALE
+								carve = tunnelBase + tunnelSpan * ty > TUNNEL_THRESHOLD + bias * TUNNEL_FADE_SCALE
 							}
 							if (!carve) continue
-							const i = blockIndex(x, y, z)
-							if (!isCarvableBlock(blocks[i])) continue
-							blocks[i] = BLOCK.AIR
+							const i = (y << 8) | colBase
+							const id = blocks[i]
+							if (id < CARVABLE_LIMIT ? CARVABLE[id] === 0 : !isCarvableBlock(id)) continue
+							blocks[i] = AIR
 							fluids[i] = 0
 						}
 					}

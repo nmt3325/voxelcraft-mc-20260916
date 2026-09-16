@@ -25,19 +25,28 @@
  * The one hot-path change kept from that experiment is the `*Raw` split: the
  * finite-input check happens once per field sample in `fbm.ts` instead of once
  * per octave.
+ *
+ * H-06 (output is bit-identical): the gradient tables are Float64Array instead
+ * of a plain number[], and `hashU32` is bound once at module scope. Under the
+ * ESM-to-CJS interop the runner uses, every cross-module call goes through a
+ * namespace getter, and a chunk profile attributed ~5% of generation time to
+ * the getter in front of `hashU32` alone.
  */
 import { hashU32 } from '@voxelcraft/core-types'
 
+/** Same function, resolved once instead of once per lattice corner. */
+const hash = hashU32
+
 /** 8 gradients for 2D: 4 axis aligned plus 4 diagonals of length sqrt(2). */
-const GRAD2: readonly number[] = [1, 0, -1, 0, 0, 1, 0, -1, 1, 1, -1, 1, 1, -1, -1, -1]
+const GRAD2 = new Float64Array([1, 0, -1, 0, 0, 1, 0, -1, 1, 1, -1, 1, 1, -1, -1, -1])
 
 /** The 12 cube-edge gradients for 3D, each of length sqrt(2). */
 // prettier-ignore
-const GRAD3: readonly number[] = [
-	1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
-	1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
-	0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1,
-]
+const GRAD3 = new Float64Array([
+  1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1, 0,
+  1, 0, 1, -1, 0, 1, 1, 0, -1, -1, 0, -1,
+  0, 1, 1, 0, -1, 1, 0, 1, -1, 0, -1, -1,
+])
 
 /**
  * With unit gradients the Perlin bound is sqrt(N)/2. The tables above are
@@ -57,7 +66,7 @@ function lerp(a: number, b: number, t: number): number {
 
 /** Gradient dot product at one 2D lattice corner. */
 function dot2(seed: number, salt: number, xi: number, zi: number, dx: number, dz: number): number {
-  const g = (hashU32(seed, salt, xi, 0, zi) & 7) * 2
+  const g = (hash(seed, salt, xi, 0, zi) & 7) * 2
   return GRAD2[g] * dx + GRAD2[g + 1] * dz
 }
 
@@ -72,7 +81,7 @@ function dot3(
   dy: number,
   dz: number,
 ): number {
-  const g = (hashU32(seed, salt, xi, yi, zi) % 12) * 3
+  const g = (hash(seed, salt, xi, yi, zi) % 12) * 3
   return GRAD3[g] * dx + GRAD3[g + 1] * dy + GRAD3[g + 2] * dz
 }
 
