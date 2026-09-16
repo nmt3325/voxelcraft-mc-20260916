@@ -4,7 +4,7 @@ import {
 	type ItemId,
 	type ItemRegistry,
 } from '@voxelcraft/core-types'
-import { ITEM_DEFS } from './itemDefs'
+import { ALL_ITEM_DEFS } from '../v2items/itemDefsV2'
 
 export interface GameplayItemRegistry extends ItemRegistry {
 	/** Non-throwing variant of `byId`. */
@@ -69,8 +69,12 @@ export function createItemRegistry(defs: readonly ItemDef[] = []): GameplayItemR
 	return registry
 }
 
+/**
+ * The shipped registry: v1 items plus the v2 block items and v2 items, so a
+ * dropped or placed v2 id always resolves.
+ */
 export function createDefaultItemRegistry(): GameplayItemRegistry {
-	return createItemRegistry(ITEM_DEFS)
+	return createItemRegistry(ALL_ITEM_DEFS)
 }
 
 /** Shared registry instance for the whole gameplay package. */

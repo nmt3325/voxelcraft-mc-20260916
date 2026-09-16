@@ -32,6 +32,8 @@ export * from './enchanting'
 export { fortuneBonus } from './enchanting'
 export { fortuneBonus as cropFortuneBonus } from './farming'
 
+// v2 block definitions (BLOCK_V2 64..81) plus their item forms.
+export * from './v2blocks'
 // v2 item definitions plus the recipes that turn the harvest into food.
 export * from './v2items'
 

@@ -7,7 +7,7 @@ import type {
 	ShapelessRecipe,
 	SmeltingRecipe,
 } from '@voxelcraft/core-types'
-import { RECIPE_DEFS } from './recipes'
+import { ALL_RECIPE_DEFS } from '../v2items/recipeDefsV2'
 
 /**
  * Recipe registry: shift-invariant shaped matching, order-independent
@@ -221,8 +221,9 @@ export function createRecipeRegistry(recipes: readonly Recipe[] = []): GameplayR
 	return registry
 }
 
+/** The shipped registry: the v1 recipes plus the additive v2 recipes. */
 export function createDefaultRecipeRegistry(): GameplayRecipeRegistry {
-	return createRecipeRegistry(RECIPE_DEFS)
+	return createRecipeRegistry(ALL_RECIPE_DEFS)
 }
 
 /** Shared registry backing the default crafting and furnace helpers. */
