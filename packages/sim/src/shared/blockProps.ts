@@ -7,10 +7,16 @@
  * No constant is re-defined: `MAX_LIGHT`, `FLUID` and every block id come from
  * `@voxelcraft/core-types`.
  *
- * Unknown ids (including the experimental range 200..255) default to air-like so
- * a stray id can never create an invisible wall.
+ * The v1 `BLOCK` ids and the additive `BLOCK_V2` ids (64..81) are both covered
+ * here: without the v2 entries every village or nether voxel fell back to the
+ * air entry and measured exactly like air for lighting, fluids and collision.
+ * The values mirror the v2 block definitions of `packages/gameplay`, which owns
+ * a regression test comparing the two tables id by id.
+ *
+ * Ids that are still unknown (including the experimental range 200..255)
+ * default to air-like so a stray id can never create an invisible wall.
  */
-import { BLOCK, FLUID, MAX_LIGHT } from '@voxelcraft/core-types'
+import { BLOCK, BLOCK_V2, FLUID, MAX_LIGHT, PORTAL } from '@voxelcraft/core-types'
 import type { BlockId, FluidKind, LightProps } from '@voxelcraft/core-types'
 
 export interface SimBlockProps extends LightProps {
@@ -132,6 +138,66 @@ for (const id of SOLID_PARTIAL) {
 	p.replaceable = false
 }
 
+/**
+ * v2 blocks (`BLOCK_V2` 64..81) that fill a whole voxel and block the sky:
+ * the nether palette, farmland, the village decoration blocks.
+ */
+const SOLID_OPAQUE_V2: readonly BlockId[] = [
+	BLOCK_V2.NETHERRACK,
+	BLOCK_V2.SOUL_SAND,
+	BLOCK_V2.QUARTZ_ORE,
+	BLOCK_V2.NETHER_BRICKS,
+	BLOCK_V2.MAGMA_BLOCK,
+	BLOCK_V2.FARMLAND,
+	BLOCK_V2.FARMLAND_WET,
+	BLOCK_V2.ENCHANTING_TABLE,
+	BLOCK_V2.BOOKSHELF,
+	BLOCK_V2.GRAVEL_PATH,
+	BLOCK_V2.HAY_BLOCK,
+]
+for (const id of SOLID_OPAQUE_V2) {
+	const p = TABLE[id]
+	p.solid = true
+	p.fullCube = true
+	p.opacity = MAX_LIGHT
+	p.skyPassThrough = false
+	p.replaceable = false
+}
+
+/** Walls, fences and gates: a collider that light still crosses. */
+const SOLID_PARTIAL_V2: readonly BlockId[] = [
+	BLOCK_V2.COBBLESTONE_WALL,
+	BLOCK_V2.FENCE,
+	BLOCK_V2.FENCE_GATE,
+]
+for (const id of SOLID_PARTIAL_V2) {
+	const p = TABLE[id]
+	p.solid = true
+	p.fullCube = false
+	p.opacity = 0
+	p.skyPassThrough = false
+	p.replaceable = false
+}
+
+/** Crops and the portal plane: no collider, replaceable, fully transparent. */
+const NON_SOLID_V2: readonly BlockId[] = [
+	BLOCK_V2.WHEAT_CROP,
+	BLOCK_V2.CARROT_CROP,
+	BLOCK_V2.POTATO_CROP,
+	BLOCK_V2.NETHER_PORTAL,
+]
+for (const id of NON_SOLID_V2) {
+	const p = TABLE[id]
+	p.solid = false
+	p.fullCube = false
+	p.opacity = 0
+	p.skyPassThrough = true
+	p.replaceable = true
+}
+
+/** Magma glow. The gameplay block table and the client mesher both use 3. */
+const MAGMA_EMISSION = 3
+
 const FLUID_BLOCKS: readonly { id: BlockId; kind: FluidKind }[] = [
 	{ id: BLOCK.WATER, kind: FLUID.Water },
 	{ id: BLOCK.WATER_FLOWING, kind: FLUID.Water },
@@ -159,6 +225,8 @@ const EMISSION: readonly (readonly [BlockId, number])[] = [
 	[BLOCK.GLOWSTONE, MAX_LIGHT],
 	[BLOCK.FURNACE_LIT, 13],
 	[BLOCK.REDSTONE_LAMP_LIT, MAX_LIGHT],
+	[BLOCK_V2.MAGMA_BLOCK, MAGMA_EMISSION],
+	[BLOCK_V2.NETHER_PORTAL, PORTAL.lightLevel],
 ]
 for (const [id, emission] of EMISSION) TABLE[id].emission = emission
 
