@@ -326,3 +326,58 @@ hard-coded to 0; `@voxelcraft/assets-gen` is still listed as a dependency that i
 no longer needed; `blockPropsV2.test.ts` has one guard that only checks its own
 fixture; and reviewers necessarily see a slightly older sha than the tip when L0
 keeps merging during a review.
+
+## D-074 rev5 B-02 and M-02 closed by fix-e
+
+`apps/game/src/registries.ts` is now a thin re-export of `BLOCKS` and `ITEMS`
+from `@voxelcraft/gameplay`, so the app can no longer drift from the shipped
+registries. Before the fix 14 of 36 v2 ids differed across 40 fields, the Nether
+portal had hardness 0 and inserted item id 65, and the three crops exposed a
+pickable `itemId`; after the fix the drift count is 0, the portal is unbreakable
+and the crops expose no item. `apps/game/src/registries.test.ts` asserts
+field-for-field parity for all 36 ids and was proven red by deleting farmland
+from the app table.
+
+## D-075 rev6 B-1 closed by fix-f: durable or loud writes
+
+`worldStore` pins a column before inserting it and makes room before the insert,
+so the column being written can never be the eviction victim. When every
+resident column holds an edit the store refuses, logs the refusal, and `setBlock`
+returns false so the server never broadcasts a rejected `BlockChange`. The
+reproduction went from 400 accepted with 62 unreadable (first loss at index 338)
+and 400 resident against a cap of 338, to 338 accepted, 62 loudly refused, zero
+unreadable and 338 resident. Three regression tests were proven red on the old
+ordering.
+
+## D-076 Root `eslint .` failed on an L0 file, not on child code
+
+Both fix-e and fix-f stopped and reported `blocked` because gate 3 as they ran it
+(`pnpm lint`, the root `eslint .` script) exited 1 with two
+`@typescript-eslint/no-require-imports` errors in `scripts/wire-deps.cjs`, a file
+L0 introduced in `c6d3ce9`. Both proved the failure reproduces on a pristine base
+tree and neither touched an L0 path, which is exactly the required behaviour. The
+fix is an eslint override that allows `require()` in `**/*.cjs`, since those files
+are CommonJS by definition; the script itself is unchanged.
+
+## D-077 Gate 3 now runs both lint forms
+
+`pnpm -r lint` (used by CI, `merge-check.sh` and `full-gate.sh`) and root
+`pnpm lint` disagreed, which is how a lint error survived several green merges.
+Both L0 gate scripts now run `pnpm -r lint` and `pnpm lint` as separate steps
+(`RC lint` and `RC lint_root`), so the two forms can never diverge again.
+
+## D-078 Deferred: block drops ignore tool tier and drop tables
+
+fix-e reported that the break path pockets `definition.itemId` with no tier or
+drop-table lookup, so QUARTZ_ORE (67) yields its own block item instead of
+NETHER_QUARTZ (312). Out of scope for review round 3; recorded as a known
+limitation for a future drop-table pass rather than patched during promotion.
+
+## D-079 Measured values recorded for the v1.2.0 README
+
+README numbers are substituted from the promoted sha: bundle raw and gzip bytes
+from `pnpm size`, the Playwright test count from the e2e specs, and the four
+bench averages from the committed `tests/bench/results/bench.json` baseline.
+Static counts measured at this sha: 58 crafting recipes (53 v1 plus 5 v2), 119
+atlas layers, 24 procedural WAVs, `CONTRACT_VERSION` 1.1.0 and
+`CONTRACT_V2_VERSION` 1.1.0.
