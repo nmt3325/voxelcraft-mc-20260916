@@ -1,7 +1,7 @@
 {
   "version": 1,
   "task": "wire-a",
-  "generatedAt": "2026-09-16T02:46:45.612Z",
+  "generatedAt": "2026-09-16T02:57:13.917Z",
   "contractVersion": "1.1.0",
   "failFactor": 3,
   "meta": {
@@ -44,12 +44,12 @@
       "ticks": 600
     },
     "totals": {
-      "chunkGenMs": 562.088,
-      "terrainMs": 523.438,
-      "decorateMs": 38.651,
-      "lightSeedAndStitchMs": 8230.747,
-      "meshMs": 96.66,
-      "simTickMs": 587.691
+      "chunkGenMs": 563.23,
+      "terrainMs": 524.555,
+      "decorateMs": 38.676,
+      "lightSeedAndStitchMs": 8169.878,
+      "meshMs": 94.702,
+      "simTickMs": 605.786
     },
     "notes": "chunkGenAvgMs covers real terrain generation plus decoration per chunk; the skylight seed and boundary stitch are timed separately as lightSeedAndStitchMs, and the light engine is also exercised inside simTickAvgMs."
   },
@@ -57,7 +57,7 @@
     {
       "name": "chunkGenAvgMs",
       "unit": "ms",
-      "value": 1.945,
+      "value": 1.949,
       "threshold": 6,
       "failThreshold": 18,
       "status": "ok"
@@ -65,7 +65,7 @@
     {
       "name": "chunkMeshAvgMs",
       "unit": "ms",
-      "value": 3.021,
+      "value": 2.959,
       "threshold": 12,
       "failThreshold": 36,
       "status": "ok"
@@ -73,7 +73,7 @@
     {
       "name": "simTickAvgMs",
       "unit": "ms",
-      "value": 0.979,
+      "value": 1.01,
       "threshold": 8,
       "failThreshold": 24,
       "status": "ok"
@@ -83,7 +83,7 @@
     {
       "name": "sectionMeshAvgMs",
       "unit": "ms",
-      "value": 0.604,
+      "value": 0.592,
       "budget": 1.5
     }
   ],
