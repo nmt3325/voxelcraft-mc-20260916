@@ -1,0 +1,82 @@
+{
+	"task": "fix-b",
+	"branch": "feat/mc-20260916/fix-b",
+	"status": "done",
+	"base_sha": "c062dca71edbafcf92cc42cbc9dc19f3d5766c67",
+	"head_sha": "d22969aa42e8b5fffe8b46089b886094d9b898d0",
+	"commits": [
+		{
+			"sha": "dc211ec97ae4474509f6a83c0734f80faf764fac",
+			"subject": "fix(sim): write flowing fluid ids back to the block array"
+		},
+		{
+			"sha": "1c735c77d48c41019037c8d5cde2e5b7dc121ab1",
+			"subject": "test(sim): pin the saturated fluid tick budget and determinism"
+		},
+		{
+			"sha": "d22969aa42e8b5fffe8b46089b886094d9b898d0",
+			"subject": "fix(world): pin golden chunks that actually contain water"
+		}
+	],
+	"files_changed": [
+		"packages/sim/src/fluid/fluidEngine.ts",
+		"packages/sim/src/fluid/fluidWriteback.test.ts",
+		"packages/sim/src/fluid/fluidBudget.test.ts",
+		"packages/world/scripts/update-golden.ts",
+		"packages/world/src/__tests__/golden.json",
+		"packages/world/src/__tests__/world-a.terrain.test.ts",
+		"docs/reports/fix-b.json"
+	],
+	"checks": [
+		{
+			"name": "typecheck",
+			"command": "pnpm -r exec tsc --noEmit",
+			"job_id": "5828d9da9fac42ae",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "logs/gate-tsc.log"
+		},
+		{
+			"name": "lint",
+			"command": "pnpm -r lint",
+			"job_id": "85de7071e8724f4b",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "logs/gate-lint.log"
+		},
+		{
+			"name": "test",
+			"command": "pnpm -r test",
+			"job_id": "e91c45d861bb4675",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "logs/gate-test.log"
+		},
+		{
+			"name": "build",
+			"command": "pnpm build",
+			"job_id": "e6fc5b06bf4840ff",
+			"state": "exited",
+			"exit_code": 0,
+			"eof": true,
+			"log": "logs/gate-build.log"
+		}
+	],
+	"contract_changes_needed": [],
+	"notes": [
+		"All three rev1 majors are fixed as behaviour changes, not as tests around the old behaviour: R-04 fluid writeback, R-02 meaningless fluids golden, R-03 saturated tick cost. majors_fixed=3.",
+		"R-04: a voxel that gains fluid now takes WATER_FLOWING (62) or LAVA_FLOWING (63), a voxel that drains goes back to AIR, and every write is announced through the block.changed event, so the previously dead flowing cleanup branch is live and the light engine gives flowing lava the same emission as source lava. Replaceable plants such as TALL_GRASS (21) keep their own block id and only get their fluid byte filled, so flooding a meadow does not delete the grass.",
+		"R-03: the per voxel flood fill that dominated the tick was replaced by a cached per tile hole distance field (a 16x16 tile padded by downhillSearchRadius=4, so 24x24=576 cells, multi source BFS capped at 3 steps). PERF.fluidCellsPerTick=4096 is now a hard per tick cap, the queue drains in stable key order, and cells that cannot change are skipped before any search.",
+		"R-03 measurements on a saturated 49x49 region: worst tick 39.18 ms before the tile field, 11.99 ms after; a tick that examines the full 4096 cell cap measures 6.48 ms against the 50 ms PERF.simTickMs budget, versus the roughly 121 ms rev1 extrapolated. Hole distance solves in the worst tick fell from 2104 to 28.",
+		"The optimisation is bit identical, not an approximation: settled world hashes stayed 410395269 (fill) and 3095267849 (drain) before and after, and are identical across per tick budgets of 4096 and 512.",
+		"New tests: packages/sim/src/fluid/fluidWriteback.test.ts (4 tests) and packages/sim/src/fluid/fluidBudget.test.ts (3 tests). Sim is 111 tests over 15 files, world 79 over 5, repository 431 in total.",
+		"The budget test asserts work, i.e. cells examined per tick and hole fields solved per tick, plus identical per tick stats and world hashes across runs and across budgets. It deliberately avoids wall clock millisecond thresholds, which rev1 R-05 criticised as flaky on shared runners.",
+		"R-02: golden.json went from 5 to 7 entries. The two added ocean chunks, seed 1337 (30,-48) and seed 20260916 (-39,-48), hash to fluids 3244926373 and 2484712597 instead of the all zero 1582341573. scripts/update-golden.ts now throws rather than writing a fixture in which no chunk holds fluid, and the terrain test pins EMPTY_FLUIDS_HASH=1582341573, proves it really is hashBuffer of an all zero 65536 byte buffer, and asserts the wet entries contain BLOCK.WATER voxels and non zero fluid bytes.",
+		"No child sessions were spawned. R-04 and R-03 both had to be solved inside the same file, packages/sim/src/fluid/fluidEngine.ts, so splitting them across children would have meant two writers on one file, and the world fixture change was a small two file edit.",
+		"packages/core-types was not touched, so no contract change was needed. Only packages/sim, packages/world and docs/reports/fix-b.json were modified, and the working tree was clean at head_sha.",
+		"head_sha is the last code commit. The commit that adds this report sits one commit on top of it and is the branch tip."
+	]
+}
