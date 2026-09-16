@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
-ROOT=/home/runner/work/_temp/gha-mcp/linux-see5rk59/work/vc
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SELF_DIR/../.." && pwd)"
+ROOT="${VC_ROOT:-$(dirname "$REPO_DIR")}"
 INTEG=integration/mc-20260916
 B="${1:-}"
 MODE="${2:---push}"
