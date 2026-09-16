@@ -24,3 +24,10 @@ export * from './farming'
 // redstone meaning as the default export and expose the farming one by name.
 export { isReplaceable } from './redstone'
 export { isReplaceable as isFarmReplaceable } from './farming'
+
+// Enchantment tables, deterministic offers and the applied tool effects.
+export * from './enchanting'
+// Fortune appears in two drop paths: the enchanting helper is the general
+// roll, the farming one is the positional crop roll.
+export { fortuneBonus } from './enchanting'
+export { fortuneBonus as cropFortuneBonus } from './farming'
