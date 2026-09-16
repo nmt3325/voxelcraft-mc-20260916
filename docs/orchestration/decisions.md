@@ -43,3 +43,44 @@ L0 records every judgement call here so children never have to guess.
 - D-034 apps/game の暫定実装（localWorld.ts の地形フィクスチャ、store.ts の localStorage ダブル）は統合後に feat/mc-20260916/wire-a で実パッケージへ差し替え、その時点で bench を再ベースライン化する。
 - D-035 独立レビューの成果物は docs/reviews/<reviewer>.md。レビュアーはソースを変更せず、自分のブランチ（review/rev1 / review/rev2）にレポートのみを push する。
 - D-036 L0 のヘルパースクリプトは scripts/l0/ にコミットする。env 失効でランナー上のスクリプトが消え、作り直しが発生したため、永続状態は GitHub のみを真実とする方針を徹底する。
+
+## D-037 CI pnpm version was specified twice (2026-09-16)
+
+GitHub Actions failed on every branch, including `main`, with `ERR_PNPM_BAD_PM_VERSION`:
+`Multiple versions of pnpm specified: version 10 in the GitHub Action config with the key "version"` and
+`version pnpm@10.34.5 in the package.json with the key "packageManager"`.
+Resolution: delete `with: version: 10` from both `pnpm/action-setup@v4` steps and keep the root
+`packageManager` field as the single source of truth. Run 35041918351 was the first fully green CI run.
+
+## D-038 Review blocker R-01: integration was missing the world-b tip (2026-09-16)
+
+Reviewer rev1 proved that `61d8159` (which deleted the 427-line
+`packages/world/src/__tests__/world-b.guards.test.ts`) is an ancestor of the integration HEAD while
+`ecaf330` (which restored it) is not, so the subtree merge silently dropped a whole guard suite.
+Resolution: restore the file from the world-b tip, then merge `origin/feat/mc-20260916/world-b` into
+integration so the remaining seed-sensitivity bounds and the final world-b report land as well.
+The world package went from 66 to 78 tests, 423 total; tsc, lint and test all exit 0.
+
+## D-039 Catbox refuses uploads from GitHub-hosted runner IPs (2026-09-16)
+
+`curl -F reqtype=fileupload -F fileToUpload=@voxelcraft-mc-20260916.zip https://catbox.moe/user/api.php`
+returns the literal body `Invalid uploader` for both HTTP/2 and HTTP/1.1, with and without a browser
+user-agent and with an empty `userhash`. The site root answers 200 and the API answers 412 for a
+parameter-less probe, so this is an uploader/IP policy rejection rather than a network or size problem
+(the archive is 816190 bytes). The release archive is reproducible from the repository with
+`bash scripts/l0/pack.sh` equivalent steps, and the destination decision is escalated to the requester
+because changing the publish target needs explicit approval.
+
+## D-040 Review follow-ups accepted without blocking v1 (2026-09-16)
+
+rev1 majors: the golden `fluids` column equals `hashBuffer(new Uint8Array(65536))` because no golden
+chunk contains water; saturated fluid ticking extrapolates to about 121 ms against the 50 ms tick and
+`pnpm bench` never exercises fluids; spreading fluid is not written back to block ids, so the
+`*_FLOWING` cleanup branch is dead code and flowing lava emits no light.
+rev2 majors: the worker meshing path is never executed by any gate; the zero-console-error assertion
+only watches `console.error` and `pageerror`; both Playwright specs self-skip when the app is missing;
+bench numbers come from bench-local fixtures; the 73-name texture list is duplicated between client and
+assets-gen; the greedy mesher silently drops quads at the u16 index cap.
+All of the above are recorded as follow-ups for v1.1 instead of being fixed under the current deadline,
+because none of them breaks a completion gate and the remaining budget is reserved for wiring
+`apps/game` onto the real packages.
