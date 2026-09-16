@@ -1,0 +1,152 @@
+{
+  "task": "wire-a",
+  "branch": "feat/mc-20260916/wire-a",
+  "status": "done",
+  "base_sha": "9c59c8ab15cc586f37412624ea1acc9f24dd2c24",
+  "head_sha": "9fe07bfd5e47aa3d2a6998c183470397b1610625",
+  "commits": [
+    {
+      "sha": "0af8f90be3c794eed6d152e64b756c9bed0505c1",
+      "subject": "feat(game): wire apps/game onto the real world and gameplay packages"
+    },
+    {
+      "sha": "4b95f100410128a16664fc6a75bbbe3e52a817c3",
+      "subject": "test(game): cover real generation and IndexedDB persistence"
+    },
+    {
+      "sha": "9fe07bfd5e47aa3d2a6998c183470397b1610625",
+      "subject": "perf(bench): re-baseline on the real world, sim and client packages"
+    }
+  ],
+  "files_changed": [
+    {
+      "change": "M",
+      "path": "apps/game/src/main.ts"
+    },
+    {
+      "change": "A",
+      "path": "apps/game/src/player.ts"
+    },
+    {
+      "change": "D",
+      "path": "apps/game/src/raycast.ts"
+    },
+    {
+      "change": "M",
+      "path": "apps/game/src/ui-bridge.ts"
+    },
+    {
+      "change": "A",
+      "path": "apps/game/src/world/chunkWorld.test.ts"
+    },
+    {
+      "change": "A",
+      "path": "apps/game/src/world/chunkWorld.ts"
+    },
+    {
+      "change": "D",
+      "path": "apps/game/src/world/localWorld.ts"
+    },
+    {
+      "change": "A",
+      "path": "apps/game/src/world/store.test.ts"
+    },
+    {
+      "change": "M",
+      "path": "apps/game/src/world/store.ts"
+    },
+    {
+      "change": "M",
+      "path": "tests/bench/results/bench.json"
+    },
+    {
+      "change": "M",
+      "path": "tests/bench/src/bench.ts"
+    },
+    {
+      "change": "D",
+      "path": "tests/bench/src/fixtures/terrain.ts"
+    },
+    {
+      "change": "D",
+      "path": "tests/bench/src/fixtures/tick.ts"
+    }
+  ],
+  "checks": [
+    {
+      "name": "typecheck",
+      "command": "pnpm -r exec tsc --noEmit",
+      "job_id": "c4a3fb597fa446bf",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "No diagnostics from any workspace project."
+    },
+    {
+      "name": "lint",
+      "command": "pnpm -r lint",
+      "job_id": "738eb0b9d27f44ca",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "eslint clean across all 9 workspace projects."
+    },
+    {
+      "name": "test",
+      "command": "pnpm -r test",
+      "job_id": "dabd57ad3a394705",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "43 test files, 420 tests passed: core-types 29, assets-gen 23, world 66, sim 104, gameplay 131, client 55, apps/game 9, tests/e2e unit 3."
+    },
+    {
+      "name": "build",
+      "command": "pnpm build",
+      "job_id": "fd272d3c1dfc494a",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "assets-gen 73 textures and 19 sounds, vite build 147 modules: dist/assets/index-BaZPECo_.js 675.41 kB (182.45 kB gzip), mesher.worker 10.71 kB."
+    },
+    {
+      "name": "size",
+      "command": "pnpm size",
+      "job_id": "5b86444f1fa545e8",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "TOTAL raw=855759 gzip=334800."
+    },
+    {
+      "name": "e2e",
+      "command": "pnpm test:e2e",
+      "job_id": "042e85fe179a482b",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "4 passed in 53.5s: boot with zero console errors, test-mode boot at 640x360, hud mounted under #ui-root, and break/place/save/reload deterministic persistence with identical state hash."
+    },
+    {
+      "name": "bench",
+      "command": "pnpm bench",
+      "job_id": "5df97c790f004945",
+      "state": "exited",
+      "exit_code": 0,
+      "eof": true,
+      "log": "chunkGenAvgMs 2.338 (fail > 18), chunkMeshAvgMs 3.671 (fail > 36), simTickAvgMs 1.17 (fail > 24), sectionMeshAvgMs 0.734 (budget 1.5). All metrics ok, no warnings, no failures."
+    }
+  ],
+  "contract_changes_needed": [],
+  "notes": [
+    "Both apps/game placeholders are gone. apps/game/src/world/localWorld.ts (deterministic terrain fixture) is replaced by apps/game/src/world/chunkWorld.ts, which drives createWorldGenerator from @voxelcraft/world into a real createSimVoxelWorld: seeded generateChunk, heightmap rebuild from lightPropsOf, generator.decorate over the full 3x3 terrain neighbourhood, light seeding via the sim light engine and boundary stitching, so biomes, caves, ores and features are all real.",
+    "apps/game/src/world/store.ts is no longer a localStorage double. It wraps the real @voxelcraft/gameplay persistence: createIndexedDbWorldStore on dbName voxelcraft with SAVE_VERSION 1 and the WorldStore chunk key [worldId, cx, cz], a chunk write queue, createMemoryWorldStore as the non-IndexedDB fallback, and an injectable store for tests. Unit tests run against the package store through fake-indexeddb.",
+    "The packages/client mesher worker pool is reused unchanged: apps/game still builds padded 18^3 requests with createEmptyPadded, fillPaddedFromSampler and createMeshRequest, and the worker protocol and MeshRequest shape are untouched.",
+    "App-local copies of package logic were deleted rather than kept in sync: fluids, light, physics, locomotion, raycasting, ECS scheduling, inventory and crafting now come from @voxelcraft/sim and @voxelcraft/gameplay. apps/game/src/raycast.ts was removed in favour of raycastVoxels, and player.ts runs the real ECS through createSchedule([fluid, light, physics]) and createTickRunner.",
+    "tests/bench was re-baselined on the real stack. tests/bench/src/fixtures/terrain.ts and fixtures/tick.ts are deleted, meta.fixtureSubstitution.used is now false, and the metric names chunkGenAvgMs, chunkMeshAvgMs, simTickAvgMs and sectionMeshAvgMs are unchanged. Generation covers 289 real chunks plus 225 decorated chunks at render distance 8, meshing feeds the real client mesher with real block, light and fluid data (160 sections, 36452 quads, 352 empty sections skipped), and the tick phase runs the real schedule over 512 spawned entities for 600 ticks.",
+    "Informational: the skylight seed plus boundary stitch for 225 chunks costs about 10.1 s (~45 ms per chunk) and is reported separately as totals.lightSeedAndStitchMs, not folded into chunkGenAvgMs. The app spreads that work across frames under the existing streaming budget, and the light engine is still exercised inside simTickAvgMs.",
+    "No assertion, threshold or E2E setting was weakened. The E2E scenario still runs at seed 1337, render distance 2 and 640x360, asserts zero console errors and page errors, and verifies that the state hash after reload equals the saved hash.",
+    "Nothing outside the owned subtrees was touched: packages/core-types, packages/world, packages/sim, packages/gameplay, docs/orchestration, .github, root config files and pnpm-lock.yaml are unchanged, and no dependency was added.",
+    "head_sha is the commit that all seven gates were verified on. The branch head after this report commit is one commit ahead and adds only docs/reports/wire-a.json, which no gate reads."
+  ]
+}
