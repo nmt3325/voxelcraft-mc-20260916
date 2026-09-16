@@ -1,43 +1,34 @@
-import { PERF, PERSIST, type GameSettings } from '@voxelcraft/core-types'
-import type { BlockEdit } from './localWorld'
-
 /**
- * World persistence double.
+ * World persistence for apps/game.
  *
- * The real store (`packages/persistence`, IndexedDB `PERSIST.dbName`) is being
- * built in parallel, so saves go to `localStorage` under the same database name
- * for now. Only this file knows about the storage backend, so switching to the
- * real store is a one-file change.
+ * This is the real `@voxelcraft/gameplay` persistence layer: an IndexedDB
+ * `WorldStore` on `PERSIST.dbName` ("voxelcraft"), `SAVE_VERSION` 1 metadata,
+ * chunk payloads keyed by [worldId, cx, cz], and the batched chunk write queue.
+ * Node and unit tests inject a store instead (memory or filesystem adapter),
+ * and a runtime without IndexedDB falls back to the memory store so the game
+ * still boots instead of logging an error.
  */
+import {
+	GAME_MODE,
+	PERF,
+	PERSIST,
+	SAVE_VERSION,
+	WORLD_GEN_VERSION,
+	type ChunkPos,
+	type GameMode,
+	type GameSettings,
+	type PlayerSave,
+	type SaveMeta,
+	type WorldStore,
+} from '@voxelcraft/core-types'
+import {
+	createChunkWriteQueue,
+	createIndexedDbWorldStore,
+	createMemoryWorldStore,
+	type ChunkWriteQueue,
+} from '@voxelcraft/gameplay'
 
-export interface PlayerState {
-	x: number
-	y: number
-	z: number
-	yaw: number
-	pitch: number
-	health: number
-	hunger: number
-	hotbar: number
-}
-
-export interface WorldRecord {
-	name: string
-	seed: number
-	createdAt: number
-	updatedAt: number
-	player: PlayerState
-	edits: BlockEdit[]
-	settings: GameSettings
-}
-
-export interface WorldStore {
-	list(): WorldRecord[]
-	load(name: string): WorldRecord | null
-	save(record: WorldRecord): void
-	remove(name: string): void
-}
-
+/** Settings used for a brand new profile. */
 export const DEFAULT_SETTINGS: GameSettings = {
 	renderDistance: PERF.renderDistanceDefault,
 	fov: PERF.fovDefault,
@@ -46,104 +37,148 @@ export const DEFAULT_SETTINGS: GameSettings = {
 	showDebug: false,
 }
 
-const INDEX_KEY = `${PERSIST.dbName}:worlds`
-const worldKey = (name: string): string => `${PERSIST.dbName}:world:${name}`
+export type StoreBackend = 'indexeddb' | 'memory' | 'injected'
 
-function memoryStorage(): Storage {
-	const map = new Map<string, string>()
-	return {
-		get length(): number {
-			return map.size
-		},
-		clear(): void {
-			map.clear()
-		},
-		getItem(key: string): string | null {
-			return map.get(key) ?? null
-		},
-		key(index: number): string | null {
-			return [...map.keys()][index] ?? null
-		},
-		removeItem(key: string): void {
-			map.delete(key)
-		},
-		setItem(key: string, value: string): void {
-			map.set(key, value)
-		},
-	} as Storage
+export interface WorldPersistenceOptions {
+	worldId: string
+	/** Injected store. Used by unit tests and by the Node adapters. */
+	store?: WorldStore
+	dbName?: string
+	/** Reported when the store has to be created; defaults to `console.warn`. */
+	onWarning?: (message: string, error?: unknown) => void
 }
 
-function resolveStorage(): Storage {
+export interface SaveInput {
+	meta: SaveMeta
+	player: PlayerSave
+	settings: GameSettings
+	chunks: readonly { cx: number; cz: number; data: Uint8Array }[]
+}
+
+export interface WorldPersistence {
+	readonly store: WorldStore
+	readonly worldId: string
+	readonly backend: StoreBackend
+	listWorlds(): Promise<readonly SaveMeta[]>
+	loadMeta(worldId?: string): Promise<SaveMeta | undefined>
+	loadPlayer(): Promise<PlayerSave | undefined>
+	loadSettings(): Promise<GameSettings>
+	chunkKeys(): Promise<readonly ChunkPos[]>
+	loadChunk(cx: number, cz: number): Promise<Uint8Array | undefined>
+	/** Queues a chunk for the batched writer (32 chunks / 1.5 s). */
+	queueChunk(cx: number, cz: number, data: Uint8Array): void
+	/** Writes metadata, the player, settings and every queued chunk. */
+	save(input: SaveInput): Promise<void>
+	deleteWorld(worldId: string): Promise<void>
+	close(): Promise<void>
+}
+
+export function indexedDbAvailable(): boolean {
+	const scope = globalThis as { indexedDB?: IDBFactory; IDBKeyRange?: typeof IDBKeyRange }
+	return scope.indexedDB !== undefined && scope.IDBKeyRange !== undefined
+}
+
+export interface SaveMetaInput {
+	worldId: string
+	name?: string
+	seed: number
+	createdAt?: number
+	lastPlayedAt?: number
+	gameMode?: GameMode
+	generatorVersion?: number
+}
+
+/** `SaveMeta` with the contract's save and generator versions filled in. */
+export function createSaveMeta(input: SaveMetaInput): SaveMeta {
+	const now = input.lastPlayedAt ?? Date.now()
+	return {
+		worldId: input.worldId,
+		name: input.name ?? input.worldId,
+		seed: input.seed >>> 0,
+		createdAt: input.createdAt ?? now,
+		lastPlayedAt: now,
+		gameMode: input.gameMode ?? GAME_MODE.Creative,
+		saveVersion: SAVE_VERSION,
+		generatorVersion: input.generatorVersion ?? WORLD_GEN_VERSION,
+	}
+}
+
+async function resolveStore(
+	options: WorldPersistenceOptions,
+): Promise<{ store: WorldStore; backend: StoreBackend }> {
+	if (options.store !== undefined) return { store: options.store, backend: 'injected' }
+	const warn =
+		options.onWarning ??
+		((message: string, error?: unknown): void => {
+			console.warn(`[voxelcraft] ${message}`, error)
+		})
+	if (!indexedDbAvailable()) {
+		warn('IndexedDB is unavailable, saving to memory only')
+		return { store: createMemoryWorldStore(), backend: 'memory' }
+	}
 	try {
-		if (typeof localStorage === 'undefined') return memoryStorage()
-		const probe = `${PERSIST.dbName}:probe`
-		localStorage.setItem(probe, '1')
-		localStorage.removeItem(probe)
-		return localStorage
-	} catch {
-		// Private mode or a blocked origin: fall back to memory.
-		return memoryStorage()
+		const store = await createIndexedDbWorldStore({ dbName: options.dbName ?? PERSIST.dbName })
+		return { store, backend: 'indexeddb' }
+	} catch (error) {
+		warn('IndexedDB could not be opened, saving to memory only:', error)
+		return { store: createMemoryWorldStore(), backend: 'memory' }
 	}
 }
 
-function isRecord(value: unknown): value is WorldRecord {
-	if (typeof value !== 'object' || value === null) return false
-	const candidate = value as Partial<WorldRecord>
-	return (
-		typeof candidate.name === 'string' &&
-		typeof candidate.seed === 'number' &&
-		Array.isArray(candidate.edits) &&
-		typeof candidate.player === 'object' &&
-		candidate.player !== null
-	)
-}
-
-export function createWorldStore(storage: Storage = resolveStorage()): WorldStore {
-	const readIndex = (): string[] => {
-		try {
-			const raw = storage.getItem(INDEX_KEY)
-			if (raw === null) return []
-			const parsed: unknown = JSON.parse(raw)
-			return Array.isArray(parsed) ? parsed.filter((n): n is string => typeof n === 'string') : []
-		} catch {
-			return []
-		}
-	}
-
-	const writeIndex = (names: readonly string[]): void => {
-		storage.setItem(INDEX_KEY, JSON.stringify([...new Set(names)]))
-	}
-
-	const load = (name: string): WorldRecord | null => {
-		try {
-			const raw = storage.getItem(worldKey(name))
-			if (raw === null) return null
-			const parsed: unknown = JSON.parse(raw)
-			if (!isRecord(parsed)) return null
-			return { ...parsed, settings: { ...DEFAULT_SETTINGS, ...parsed.settings } }
-		} catch {
-			return null
-		}
-	}
+export async function openWorldPersistence(
+	options: WorldPersistenceOptions,
+): Promise<WorldPersistence> {
+	const { store, backend } = await resolveStore(options)
+	const worldId = options.worldId
+	let queue: ChunkWriteQueue = createChunkWriteQueue(store, worldId, {
+		onError: (error: unknown) => {
+			console.warn('[voxelcraft] chunk write failed:', error)
+		},
+	})
 
 	return {
-		list(): WorldRecord[] {
-			const records: WorldRecord[] = []
-			for (const name of readIndex()) {
-				const record = load(name)
-				if (record !== null) records.push(record)
+		store,
+		worldId,
+		backend,
+		listWorlds(): Promise<readonly SaveMeta[]> {
+			return store.listWorlds()
+		},
+		loadMeta(id: string = worldId): Promise<SaveMeta | undefined> {
+			return store.getMeta(id)
+		},
+		loadPlayer(): Promise<PlayerSave | undefined> {
+			return store.getPlayer(worldId)
+		},
+		async loadSettings(): Promise<GameSettings> {
+			const stored = await store.getSettings()
+			return { ...DEFAULT_SETTINGS, ...(stored ?? {}) }
+		},
+		chunkKeys(): Promise<readonly ChunkPos[]> {
+			return store.listChunkKeys(worldId)
+		},
+		loadChunk(cx: number, cz: number): Promise<Uint8Array | undefined> {
+			return store.getChunk(worldId, cx, cz)
+		},
+		queueChunk(cx: number, cz: number, data: Uint8Array): void {
+			queue.queue(cx, cz, data)
+		},
+		async save(input: SaveInput): Promise<void> {
+			for (const chunk of input.chunks) queue.queue(chunk.cx, chunk.cz, chunk.data)
+			await queue.flush()
+			await store.putMeta(input.meta)
+			await store.putPlayer(worldId, input.player)
+			await store.putSettings(input.settings)
+		},
+		async deleteWorld(id: string): Promise<void> {
+			await store.deleteWorld(id)
+			if (id === worldId) {
+				// The queue holds payloads for a world that no longer exists.
+				queue = createChunkWriteQueue(store, worldId)
 			}
-			records.sort((a, b) => b.updatedAt - a.updatedAt)
-			return records
 		},
-		load,
-		save(record: WorldRecord): void {
-			storage.setItem(worldKey(record.name), JSON.stringify(record))
-			writeIndex([...readIndex(), record.name])
-		},
-		remove(name: string): void {
-			storage.removeItem(worldKey(name))
-			writeIndex(readIndex().filter((entry) => entry !== name))
+		async close(): Promise<void> {
+			await queue.close()
+			await store.close()
 		},
 	}
 }
