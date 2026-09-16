@@ -75,6 +75,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/world
 
+  apps/server:
+    dependencies:
+      '@voxelcraft/core-types':
+        specifier: workspace:*
+        version: link:../../packages/core-types
+      '@voxelcraft/net':
+        specifier: workspace:*
+        version: link:../../packages/net
+
   packages/assets-gen:
     dependencies:
       '@voxelcraft/core-types':
@@ -112,6 +121,12 @@ importers:
       '@voxelcraft/world':
         specifier: workspace:*
         version: link:../world
+
+  packages/net:
+    dependencies:
+      '@voxelcraft/core-types':
+        specifier: workspace:*
+        version: link:../core-types
 
   packages/sim:
     dependencies:
