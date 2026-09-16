@@ -435,3 +435,29 @@ owned paths, the red-to-green proofs were reproduced from the recorded job ids, 
 merge check passed on each merge commit. Both tasks are therefore recorded as done, and the
 child prompt template now names the exact lint command that counts as gate 3 so this class of
 false block cannot repeat.
+
+## D-084 the pointer lock now has an exit
+
+The macOS report was that the mouse never came back. `apps/game/src/main.ts` requested pointer
+lock on `mousedown`, and that was the only pointer-lock call in the whole app: no
+`exitPointerLock`, no `pointerlockchange` listener and no binding that paused, so the capture had
+no exit. Opening the inventory or the enchanting table left the cursor captured, the `pause`
+screen was unreachable even though it existed, and the next click on the canvas re-captured
+immediately. Chrome and Safari also consume the `Escape` keypress that ends a lock, so the app
+could not observe the release from the keyboard at all. The lifecycle now lives in
+`apps/game/src/pointerLock.ts`: `pointerlockchange` is the source of truth, a lost lock is
+reported exactly once and pauses the game, every screen change runs through `setScreen` which
+releases the pointer whenever the target screen is not `playing`, and a request inside the
+browser's post-release cooldown is dropped instead of becoming a rejected promise that the
+`unhandledrejection` handler would record as an error. Eight unit tests in
+`apps/game/src/pointerLock.test.ts` cover capture, a browser-driven release, the cooldown, a
+deliberate release, a rejected request, `pointerlockerror` and dispose; they are also the first
+tests to exercise `apps/game` beyond the registries, the pattern rev5 M-02 asked for.
+
+## D-085 README commands keep their comments on their own lines
+
+Pasting the quick start into a shell without `interactive_comments` (the reported case was zsh on
+macOS) turned `pnpm dev         # http://127.0.0.1:5173` into `vite '#' http://127.0.0.1:5173`,
+and vite exited with `CACError: Unused args`. Every comment in the README command blocks now sits
+above its command, so the blocks are safe to paste one line at a time or all at once, and the
+controls table states that `Esc` gives the mouse back.
