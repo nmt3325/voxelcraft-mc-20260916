@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -uo pipefail
-ROOT=/home/runner/work/_temp/gha-mcp/linux-see5rk59/work/vc
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SELF_DIR/../.." && pwd)"
+ROOT="${VC_ROOT:-$(dirname "$REPO_DIR")}"
 REPO_URL=https://github.com/nmt3325/voxelcraft-mc-20260916.git
 C=83c5553aacc1115c5c2e93a0622ceb685eb813ef
 mkdir -p "$ROOT/logs"

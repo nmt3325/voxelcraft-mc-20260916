@@ -37,7 +37,7 @@ describe('shared registry ids', () => {
 	})
 
 	it('pins the contract version', () => {
-		expect(CONTRACT_VERSION).toBe('1.0.0')
+		expect(CONTRACT_VERSION).toBe('1.1.0')
 	})
 })
 
