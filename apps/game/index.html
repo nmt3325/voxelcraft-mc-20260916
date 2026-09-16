@@ -25,14 +25,21 @@
         width: 100%;
         height: 100%;
       }
-      /* The UI subtree renders into #ui-root and owns its own styling. */
+      /*
+       * The UI subtree renders into #ui-root and owns its own styling: the
+       * full-screen `.vc-ui` layer is transparent to the pointer and only the
+       * interactive parts (hotbar, menus, touch controls) opt back in with
+       * their own `pointer-events: auto`.
+       *
+       * Do not add `#ui-root > * { pointer-events: auto }` here: an ID rule
+       * beats `.vc-ui`, the whole layer becomes a hit target, and the canvas
+       * never receives the mousedown that requests pointer lock - mouse look
+       * and block breaking die while keyboard movement keeps working.
+       */
       #ui-root {
         position: absolute;
         inset: 0;
         pointer-events: none;
-      }
-      #ui-root > * {
-        pointer-events: auto;
       }
     </style>
   </head>
