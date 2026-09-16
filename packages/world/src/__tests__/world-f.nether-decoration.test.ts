@@ -2,11 +2,11 @@
  * Nether decoration: quartz veins, glowstone clusters, soul sand and magma
  * patches. Owned by task v2-world-nether-deco.
  *
- * The generator does not call the decoration seam yet, that wiring belongs to
- * L1-F, so every test generates a chunk with createWorldGenerator and then runs
- * the pass over it by hand the way dimension.ts will: placeChunk on the freshly
- * filled arrays, decorate on a ChunkGrid region that gives the pass a loaded
- * neighbourhood to reach into.
+ * dimension.ts now runs the seam for real: placeChunk inside generateChunk and
+ * decorate from the generator. These tests still drive the pass by hand on top
+ * of the bare terrain fill, so they can compare a chunk before and after the
+ * pass, and one case asserts that the hand run matches the wired pipeline
+ * voxel for voxel.
  *
  * The invariant tests collect every rule that broke into one expect, so a
  * failure names all of them instead of stopping at the first voxel.
@@ -89,10 +89,11 @@ function decoration(seed: number) {
 
 /** A generated nether chunk, plus the terrain it held before decoration. */
 function decorated(seed: number, cx: number, cz: number) {
-	const gen = createWorldGenerator(seed, DIMENSION.Nether)
 	const blocks = new Uint16Array(CHUNK_VOLUME)
 	const fluids = new Uint8Array(CHUNK_VOLUME)
-	gen.generateChunk(cx, cz, blocks, fluids)
+	// The shell on its own: the generator decorates inside generateChunk now,
+	// so the bare fill is the only way to still see a chunk before the pass.
+	createNetherTerrain(seed, createNoiseBasis(seed)).fillChunk(cx, cz, blocks, fluids)
 	const terrainOnly = blocks.slice()
 	decoration(seed).placeChunk(cx, cz, blocks, fluids)
 	return { blocks, fluids, terrainOnly }
@@ -196,6 +197,21 @@ describe('nether decoration determinism', () => {
 	it.each(SEEDS)('actually decorates the chunk for seed %i', (seed) => {
 		const { blocks, terrainOnly } = decorated(seed, 3, -7)
 		expect(blocks).not.toEqual(terrainOnly)
+	})
+
+	it.each(SEEDS)('matches the wired generator pipeline for seed %i', (seed) => {
+		const { blocks } = decorated(seed, 3, -7)
+		const wired = new Uint16Array(CHUNK_VOLUME)
+		const wiredFluids = new Uint8Array(CHUNK_VOLUME)
+		createWorldGenerator(seed, DIMENSION.Nether).generateChunk(3, -7, wired, wiredFluids)
+		let first = -1
+		for (let i = 0; i < wired.length; i++) {
+			if (wired[i] !== blocks[i]) {
+				first = i
+				break
+			}
+		}
+		expect(first).toBe(-1)
 	})
 
 	it('decorates the two seeds differently', () => {
@@ -318,8 +334,7 @@ describe('soul sand and magma patches', () => {
 		const magmaRate = magma / floors
 		expect(magmaRate).toBeGreaterThan(NETHER_GEN.magmaPatchChance - 0.05)
 		expect(magmaRate).toBeLessThan(NETHER_GEN.magmaPatchChance + 0.05)
-		const soulExpected =
-			NETHER_GEN.soulSandPatchChance * (1 - NETHER_GEN.magmaPatchChance)
+		const soulExpected = NETHER_GEN.soulSandPatchChance * (1 - NETHER_GEN.magmaPatchChance)
 		const soulRate = soul / floors
 		expect(soulRate).toBeGreaterThan(soulExpected - 0.06)
 		expect(soulRate).toBeLessThan(soulExpected + 0.06)

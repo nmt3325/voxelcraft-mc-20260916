@@ -24,6 +24,13 @@ import { NETHER_ROOF_TOP, createWorldGenerator } from '../index'
 
 const SEEDS = [1337, 20260916]
 const LAVA_SOURCE = packFluid({ kind: FLUID.Lava, level: 0, falling: false })
+/** Solid nether ground: the shell, plus anything the decoration pass adds. */
+const NETHER_GROUND: number[] = [
+	BLOCK_V2.NETHERRACK,
+	BLOCK_V2.QUARTZ_ORE,
+	BLOCK_V2.SOUL_SAND,
+	BLOCK_V2.MAGMA_BLOCK,
+]
 
 function genNether(seed: number, cx: number, cz: number) {
 	const gen = createWorldGenerator(seed, DIMENSION.Nether)
@@ -84,7 +91,9 @@ describe('nether determinism', () => {
 				if (sample.surfaceY === NETHER_GEN.lavaSeaLevel) continue
 				// ... and the column agrees with the voxels of the generated chunk.
 				const y = sample.surfaceY
-				expect(blocks[blockIndex(x, y, z)]).toBe(BLOCK_V2.NETHERRACK)
+				// Decoration may have turned that floor voxel into an ore or a patch,
+				// so the column has to agree on ground, not on netherrack itself.
+				expect(NETHER_GROUND).toContain(blocks[blockIndex(x, y, z)])
 				expect(blocks[blockIndex(x, y + 1, z)]).toBe(BLOCK.AIR)
 				expect(blocks[blockIndex(x, y + 2, z)]).toBe(BLOCK.AIR)
 				checked++
