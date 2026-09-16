@@ -11,6 +11,7 @@ import { BLOCK_DEFS } from '../blocks/blockDefs'
 import { BLOCKS } from '../blocks/registry'
 import { ITEM_DEF_COUNT, ITEM_DEFS, TOOL_DURABILITY, isOwnBlockItem } from './itemDefs'
 import { ITEMS, createDefaultItemRegistry, createItemRegistry } from './registry'
+import { ALL_ITEM_DEF_COUNT } from '../v2items/itemDefsV2'
 
 const ITEM_KEYS = Object.keys(ITEM) as Array<keyof typeof ITEM>
 const TOOL_SUFFIXES = ['_PICKAXE', '_AXE', '_SHOVEL', '_SWORD']
@@ -90,8 +91,8 @@ describe('ITEM_DEFS', () => {
 
 describe('item registry', () => {
 	it('round trips by id and by name', () => {
-		expect(ITEMS.count()).toBe(ITEM_DEF_COUNT)
-		expect(ITEMS.all()).toHaveLength(ITEM_DEF_COUNT)
+		expect(ITEMS.count()).toBe(ALL_ITEM_DEF_COUNT)
+		expect(ITEMS.all()).toHaveLength(ALL_ITEM_DEF_COUNT)
 		for (const def of ITEM_DEFS) {
 			expect(ITEMS.byId(def.id)).toBe(def)
 			expect(ITEMS.byName(def.name)).toBe(def)
@@ -106,7 +107,7 @@ describe('item registry', () => {
 
 	it('builds independent registries', () => {
 		const fresh = createDefaultItemRegistry()
-		expect(fresh.count()).toBe(ITEM_DEF_COUNT)
+		expect(fresh.count()).toBe(ALL_ITEM_DEF_COUNT)
 		expect(fresh).not.toBe(ITEMS)
 
 		const empty = createItemRegistry()

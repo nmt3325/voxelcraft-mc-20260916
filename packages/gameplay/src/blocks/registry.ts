@@ -7,7 +7,7 @@ import {
 	type LightProps,
 	type RenderLayer,
 } from '@voxelcraft/core-types'
-import { BLOCK_DEFS } from './blockDefs'
+import { ALL_BLOCK_DEFS } from '../v2blocks/blockDefsV2'
 
 /** Light behaviour used for ids that were never defined (treated as air). */
 export const UNKNOWN_LIGHT_PROPS: LightProps = Object.freeze({
@@ -125,8 +125,12 @@ export function createBlockRegistry(defs: readonly BlockDef[] = []): GameplayBlo
 	return registry
 }
 
+/**
+ * The shipped registry: the v1 table plus the additive v2 blocks, so every id
+ * world generation can emit resolves instead of behaving like air.
+ */
 export function createDefaultBlockRegistry(): GameplayBlockRegistry {
-	return createBlockRegistry(BLOCK_DEFS)
+	return createBlockRegistry(ALL_BLOCK_DEFS)
 }
 
 /** Shared registry instance for the whole gameplay package. */

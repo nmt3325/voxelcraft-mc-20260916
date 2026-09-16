@@ -10,14 +10,15 @@ import {
 } from '@voxelcraft/core-types'
 import { displayNameOf } from '../blocks/blockDefs'
 import { ITEM_DEFS } from '../items/itemDefs'
-import { createItemRegistry, type GameplayItemRegistry } from '../items/registry'
+import { BLOCK_ITEM_V2_DEFS } from '../v2blocks/blockItemsV2'
 
 /**
  * Additive v2 item table.
  *
  * Nothing is appended to `ITEM_DEFS`: the v1 table keeps exactly the ids the
- * frozen contract describes, and the merged view only exists inside
- * `createV2ItemRegistry()`.
+ * frozen contract describes. `ALL_ITEM_DEFS` is the merged table the shipped
+ * `ITEMS` registry defines, so every v2 id resolves in the registry the app
+ * actually builds.
  *
  * The override table is typed `Record<ItemV2KeyName, ...>` so a future contract
  * id fails compilation instead of silently missing a definition.
@@ -108,7 +109,11 @@ function buildItemV2Defs(): readonly ItemDef[] {
 export const ITEM_V2_DEFS: readonly ItemDef[] = buildItemV2Defs()
 export const ITEM_V2_DEF_COUNT = ITEM_V2_DEFS.length
 
-/** v1 and v2 items in one registry. The shared `ITEMS` stays v1 only. */
-export function createV2ItemRegistry(): GameplayItemRegistry {
-	return createItemRegistry([...ITEM_DEFS, ...ITEM_V2_DEFS])
-}
+/**
+ * v1 items, the item forms of the v2 blocks and the additive v2 items: exactly
+ * what the shipped `ITEMS` registry defines.
+ */
+export const ALL_ITEM_DEFS: readonly ItemDef[] = Object.freeze(
+	[...ITEM_DEFS, ...BLOCK_ITEM_V2_DEFS, ...ITEM_V2_DEFS].sort((a, b) => a.id - b.id),
+)
+export const ALL_ITEM_DEF_COUNT = ALL_ITEM_DEFS.length

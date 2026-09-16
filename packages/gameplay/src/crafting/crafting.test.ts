@@ -13,6 +13,7 @@ import {
 } from '../inventory/inventory'
 import { craftFromGrid, craftFromInventory, matchCraftingGrid } from './craft'
 import { RECIPE_DEFS, RECIPE_DEF_COUNT } from './recipes'
+import { ALL_RECIPE_DEF_COUNT } from '../v2items/recipeDefsV2'
 import { RECIPES, createRecipeRegistry } from './registry'
 
 function stack(item: number, count = 1, damage = 0): ItemStack {
@@ -34,10 +35,10 @@ function place(
 }
 
 describe('recipe registry', () => {
-	it('registers the whole v1 table', () => {
+	it('registers the whole v1 and v2 tables', () => {
 		expect(RECIPE_DEF_COUNT).toBe(RECIPE_DEFS.length)
-		expect(RECIPES.count()).toBe(RECIPE_DEF_COUNT)
-		expect(RECIPES.all()).toHaveLength(RECIPE_DEF_COUNT)
+		expect(RECIPES.count()).toBe(ALL_RECIPE_DEF_COUNT)
+		expect(RECIPES.all()).toHaveLength(ALL_RECIPE_DEF_COUNT)
 		expect(RECIPES.byId('crafting_table')?.result.item).toBe(BLOCK.CRAFTING_TABLE)
 		expect(RECIPES.byId('no_such_recipe')).toBeUndefined()
 	})

@@ -14,7 +14,8 @@ import { RECIPE_DEF_COUNT, RECIPE_DEFS } from '../crafting/recipes'
 import { RECIPES } from '../crafting/registry'
 import { ITEM_DEF_COUNT, ITEM_DEFS } from '../items/itemDefs'
 import { ITEMS } from '../items/registry'
-import { ITEM_V2_DEF_COUNT, ITEM_V2_DEFS, createV2ItemRegistry, itemV2NameOf } from './itemDefsV2'
+import { ALL_ITEM_DEF_COUNT, ITEM_V2_DEF_COUNT, ITEM_V2_DEFS, itemV2NameOf } from './itemDefsV2'
+import { createV2ItemRegistry } from './registryV2'
 import {
 	RECIPE_V2_DEF_COUNT,
 	RECIPE_V2_DEFS,
@@ -103,7 +104,7 @@ describe('createV2ItemRegistry', () => {
 	it('resolves both v1 and v2 ids', () => {
 		const items = createV2ItemRegistry()
 
-		expect(items.count()).toBe(ITEM_DEF_COUNT + ITEM_V2_DEF_COUNT)
+		expect(items.count()).toBe(ALL_ITEM_DEF_COUNT)
 		expect(items.byId(ITEM.RAW_BEEF).name).toBe('raw_beef')
 		expect(items.byId(ITEM_V2.BREAD).name).toBe('bread')
 		expect(items.byName('bread')?.id).toBe(ITEM_V2.BREAD)
@@ -121,12 +122,12 @@ describe('createV2ItemRegistry', () => {
 		expect(items.byId(ITEM_V2.MUTTON).name).toBe('mutton')
 	})
 
-	it('leaves the default item table untouched', () => {
+	it('keeps the v1 table frozen while the shipped registry resolves v2', () => {
 		expect(ITEM_DEF_COUNT).toBe(ITEM_DEFS.length)
-		expect(ITEMS.count()).toBe(ITEM_DEF_COUNT)
-		expect(ITEMS.tryById(ITEM_V2.BREAD)).toBeUndefined()
-		expect(ITEMS.has(ITEM_V2.FLINT_AND_STEEL)).toBe(false)
 		expect(ITEM_DEFS.some((def) => def.id >= ITEM_V2_BASE)).toBe(false)
+		expect(ITEMS.count()).toBe(ALL_ITEM_DEF_COUNT)
+		expect(ITEMS.tryById(ITEM_V2.BREAD)).toBeDefined()
+		expect(ITEMS.has(ITEM_V2.FLINT_AND_STEEL)).toBe(true)
 	})
 })
 
@@ -141,8 +142,8 @@ describe('createV2RecipeRegistry', () => {
 			expect(recipes.byId(id), id).toBeDefined()
 		}
 		expect(recipes.byId('crafting_table')).toBeDefined()
-		expect(RECIPES.count()).toBe(RECIPE_DEF_COUNT)
-		expect(RECIPES.byId(RECIPE_V2_ID.BreadFromWheat)).toBeUndefined()
+		expect(RECIPES.count()).toBe(recipes.count())
+		expect(RECIPES.byId(RECIPE_V2_ID.BreadFromWheat)).toBeDefined()
 	})
 
 	it('only outputs v2 items and never reuses a v1 recipe id', () => {
