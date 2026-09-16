@@ -1,6 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
-  "compilerOptions": { "types": ["node", "vite/client"] },
+  "compilerOptions": {
+    "types": ["node", "vite/client"],
+    "paths": { "@voxelcraft/net": ["../../packages/net/src/index.ts"] }
+  },
   "include": ["**/*.ts"],
   "exclude": ["node_modules", "dist", "coverage", "generated"]
 }

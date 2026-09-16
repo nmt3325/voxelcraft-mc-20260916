@@ -92,7 +92,7 @@ function clampAxis(value: number): number {
 export class PlayerRuntime {
 	readonly ecs: SimEcsWorld
 	readonly entity: EntityId
-	readonly runner: TickRunner
+	runner: TickRunner
 	readonly inventory: InventoryState
 	gameMode: GameMode
 	respawn: Vec3i | null
@@ -103,6 +103,7 @@ export class PlayerRuntime {
 	private readonly physics: PhysicsStateComp
 	private readonly intent: IntentComp
 	private readonly vitals: HealthComp
+	private readonly simulate: boolean
 
 	constructor(options: PlayerRuntimeOptions) {
 		const world = options.world
@@ -156,12 +157,27 @@ export class PlayerRuntime {
 		this.intent = requireComponent(this.ecs.get(this.entity, Intent), 'intent')
 		this.vitals = requireComponent(this.ecs.get(this.entity, Health), 'health')
 
-		// SYSTEM_ORDER sorts these into fluid -> light -> physics.
+		this.simulate = options.simulatePlayer !== false
+		this.runner = createTickRunner(this.ecs, this.scheduleFor(world), options.tick ?? 0)
+	}
+
+	/** SYSTEM_ORDER sorts these into fluid -> light -> physics. */
+	private scheduleFor(world: ChunkWorld): ReturnType<typeof createSchedule> {
 		const entries: SystemEntry[] = [fluidSystemEntry(world.fluids), lightSystemEntry(world.light)]
-		if (options.simulatePlayer !== false) {
+		if (this.simulate) {
 			entries.push(defineSystem('physics', createPhysicsSystem(world.voxels)))
 		}
-		this.runner = createTickRunner(this.ecs, createSchedule(entries), options.tick ?? 0)
+		return createSchedule(entries)
+	}
+
+	/**
+	 * Points the fixed schedule at another dimension's world, keeping the tick
+	 * count. Portal travel swaps the ChunkWorld under the player, and fluid,
+	 * light and physics have to follow, or the player would keep colliding with
+	 * the voxels of the dimension just left.
+	 */
+	retarget(world: ChunkWorld): void {
+		this.runner = createTickRunner(this.ecs, this.scheduleFor(world), this.runner.tick)
 	}
 
 	get x(): number {
