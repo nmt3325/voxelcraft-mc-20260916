@@ -22,10 +22,18 @@
  * once instead of once per octave, the octave salt advances by addition, the
  * octave loop calls the unguarded perlin entry points, and the warp can write
  * into a caller-owned buffer so the climate path allocates nothing per column.
+ *
+ * H-06 (still bit-identical): the two perlin entry points are bound once at
+ * module scope. The runner transpiles ESM to CJS, so an unbound cross-module
+ * call pays a namespace getter on every octave.
  */
 import type { FbmOptions } from '@voxelcraft/core-types'
 import type { WarpResult } from '../internal'
 import { perlin2Raw, perlin3Raw } from './perlin'
+
+/** Same samplers, resolved once instead of once per octave. */
+const perlin2 = perlin2Raw
+const perlin3 = perlin3Raw
 
 /** cos(0.5) and sin(0.5). */
 const ROT_C = 0.8775825618903728
@@ -73,7 +81,7 @@ export function fbm2(seed: number, salt: number, x: number, z: number, opts: Fbm
   let norm = 0
   let octaveSalt = salt
   for (let o = 0; o < octaves; o++) {
-    sum += perlin2Raw(seed, octaveSalt, px * freq, pz * freq) * amp
+    sum += perlin2(seed, octaveSalt, px * freq, pz * freq) * amp
     norm += amp
     amp *= gain
     freq *= lacunarity
@@ -109,7 +117,7 @@ export function fbm3(
   let norm = 0
   let octaveSalt = salt
   for (let o = 0; o < octaves; o++) {
-    sum += perlin3Raw(seed, octaveSalt, px * freq, y * freq, pz * freq) * amp
+    sum += perlin3(seed, octaveSalt, px * freq, y * freq, pz * freq) * amp
     norm += amp
     amp *= gain
     freq *= lacunarity
@@ -148,7 +156,7 @@ export function ridged2(
   let norm = 0
   let octaveSalt = salt
   for (let o = 0; o < octaves; o++) {
-    const n = perlin2Raw(seed, octaveSalt, px * freq, pz * freq)
+    const n = perlin2(seed, octaveSalt, px * freq, pz * freq)
     const ridge = 1 - (n < 0 ? -n : n)
     sum += ridge * ridge * amp
     norm += amp
@@ -182,8 +190,8 @@ export function warp2To(
 ): void {
   const fx = x * frequency
   const fz = z * frequency
-  out[offset] = x + perlin2Raw(seed, saltX, fx, fz) * amount
-  out[offset + 1] = z + perlin2Raw(seed, saltZ, fx, fz) * amount
+  out[offset] = x + perlin2(seed, saltX, fx, fz) * amount
+  out[offset + 1] = z + perlin2(seed, saltZ, fx, fz) * amount
 }
 
 /**
