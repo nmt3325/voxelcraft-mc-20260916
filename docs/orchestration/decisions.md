@@ -193,3 +193,15 @@ generation, break/place, save/load, crafting and the E2E suite are never reduced
 - 2026-09-16 16:30 JST D-054: L1-E が `contract_changes_needed` で挙げた 2 件を L0 が解消した。`pnpm-lock.yaml` に `packages/net` と `apps/server` の importers を追加し、`scripts/wire-deps.cjs` のプロジェクトグラフにも両者を登録（`packages/net` は core-types 依存、`apps/server` は core-types と net 依存）。コミット `0600768`。なお CI の install ステップは verify / e2e の両ジョブとも `--no-frozen-lockfile` を使っているため CI が赤になる状態ではなかったが、lockfile をリポジトリの真実に揃えた。
 - 2026-09-16 16:30 JST D-055: L1-H（v2-client）のセッションは、子自身の 6 ゲートがすべてグリーンになった後、`docs/reports/v2-client.json` を書き出す前に status=failed で終了した。リモートブランチの 8 コミット / 84 ファイルは健全だったため、子の自己申告ではなく L0 の git 実測とマージゲート（job `03234d4ea6e547bc`、8 ステップすべて exit 0）を合格根拠として L0 がレポートを代筆した。以後も「子のレポートは参考、合格判定は L0 のゲート」を原則とする。
 - 2026-09-16 16:30 JST D-056: Phase 8 の統合順は v2-net → v1_1-sim → v2-world → v2-gameplay → v2-client とした。新規パッケージ（`packages/net` / `apps/server`）を含む v2-net を先頭に置いて lockfile と依存グラフの欠落を最初に解消し、残る 4 本は素の `scripts/l0/merge-check.sh` で通せる状態にした。各マージは `merge --no-ff` 直後に install/tsc/lint/test/build/size/e2e/bench の 8 ゲートを毎回実行している。
+
+## D-057 昇格前に main を integration へ同期する（2026-09-16）
+
+- 事象: PR #9 のマージコミットにより `main` が `integration/mc-20260916` の祖先でなくなり、`scripts/l0/main-merge.sh` の fast-forward ガードが `NOT_FF` で停止した。
+- 判断: 昇格の直前に `origin/main` を統合ブランチへ `merge --no-ff` して同期し、同期後の head でフルゲートを再実行してから PR を作る。リリースは常に昇格後の `main` を target にする。
+- 実装: `scripts/l0/sync-main.sh` を追加した。同期済みなら `ALREADY_SYNCED=yes` で no-op、未同期ならマージしてツリー差分の有無を出力し、`origin/integration/mc-20260916` へ push する。
+- 実測: 同期 head `687ff6b89355d82b79db1d454878f2d3d2f19db7`（ツリー変更なし）、再ゲート job `87707e2487b54703` で 8 ゲートとも RC=0、PR #10 → main `35f1acbdfeb6f5741be4abaaa4716c343af2bdc8`、`MAIN_CONTAINS_INTEG=yes`、CI run `35071357361` success。
+
+## D-058 外部ミラーの再試行結果と成果物 URL の正典（2026-09-16）
+
+- v1.1.0 の zip で Litterbox（72h）と Catbox を再試行したが、Litterbox は `HTTP=500`（BunkerWeb のエラーピージ）、Catbox は `HTTP=412 Invalid uploader` で失敗。
+- 判断: D-049 / D-053 を維持し、GitHub Release のアセットを成果物の正典 URL とする。v1.1.0 は `curl -sIL` で HTTP 200 / content-length 1263077 を確認し、実ダウンロードとバイト一致を検証済み。
