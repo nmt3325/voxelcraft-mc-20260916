@@ -123,3 +123,65 @@ For v1 this is accepted: E2E stays green at render distance 2 and the bench thre
 recorded as the first optimisation target before render distance is raised, together with the
 vitest-level `chunkGen` average of ~11 ms that already exceeds the 4 ms budget while staying under
 the bench failure factor.
+
+## D-044 The v1.1 contract is additive and lives in `core-types/src/v2` (2026-09-16 11:40 JST)
+
+`CONTRACT_VERSION` moves from `1.0.0` to `1.1.0` and `packages/core-types/src/index.ts` now re-exports
+`./v2`. Every v2 symbol is new: block ids are confined to 64..81 (`BLOCK_V2_BASE=64`,
+`BLOCK_V2_MAX=99`), item ids to 305..322 (`ITEM_V2_BASE=305`, `ITEM_V2_MAX=383`), and the twelve new
+event names live in `EVENT_V2` next to the frozen v1 `EVENT` map. Nothing shipped in v1.0.1 changed:
+the chunk codec (`CHUNK_MAGIC`, `CHUNK_CODEC_VERSION=1`), `SAVE_VERSION=1`, the mesher layout
+(`PADDED=18`, `VERTEX_STRIDE_U16=8`), `PERF`/`BENCH` budgets and all v1 ids keep their values, so
+v1 saves stay loadable. `contract-v2.test.ts` (17 tests) pins the id bands, the XP and enchanting
+formulas, the farming/breeding constants and the network framing helpers.
+
+## D-045 Phase 8 runs five subtrees with disjoint ownership (2026-09-16 11:40 JST)
+
+L1-E `v2-net` owns `packages/net` and `apps/server`; L1-F `v2-world` owns `packages/world`; L1-G
+`v2-gameplay` owns `packages/gameplay`; L1-H `v2-client` owns `packages/client`,
+`packages/assets-gen`, `apps/game`, `tests/e2e` and `tests/bench`; L1-I `v1_1-sim` owns
+`packages/sim`. No path is assigned twice, and `packages/core-types`, `docs/orchestration`,
+`.github`, the root configs, `pnpm-lock.yaml` and `scripts/l0` stay L0-only, exactly as in v1.
+Dependencies are still declared only in the root `package.json` and wired with
+`node scripts/wire-deps.cjs` (D-020).
+
+## D-046 Multiplayer is a development/LAN authoritative server, not a hosted service (2026-09-16 11:40 JST)
+
+`NET` fixes protocol version 1, a 20 Hz authoritative tick, 10 Hz snapshots, at most 8 players, a 6
+chunk streaming radius and 24 chunks/s per client over a single `/ws` endpoint on port 8787. There
+is no account system, no TLS termination inside the app and no anti-cheat beyond server-side
+validation of block edits and movement clamping: the server is meant to be run on a trusted LAN or
+behind a reverse proxy. Frames use an 8 byte header (`NET_MAGIC=0x5643`) so the wire format can be
+extended without breaking the v1 single-player save path.
+
+## D-047 The Nether is the only extra dimension in v2 (2026-09-16 11:40 JST)
+
+`DIMENSION` has exactly two members (`Overworld`, `Nether`) with an 8:1 horizontal scale, a 127
+block ceiling, zero skylight and a lava sea at y=31. Portals require an obsidian frame with a 2x3
+to 21x21 inner area, an 80 tick travel delay, a 300 tick cooldown and a 64 block link search radius.
+An End-style dimension is explicitly out of scope: it would need a boss entity, new mob AI and new
+particle work that does not fit the remaining schedule.
+
+## D-048 rev2 follow-ups are scheduled as v1.1 hardening (2026-09-16 11:40 JST)
+
+The four remaining rev2 majors are assigned instead of deferred again: worker-path E2E coverage
+(H-01), treating `console.warn` as an E2E failure (H-02), removing the E2E self-skip that silently
+passed without WebGL (H-03) and a u16 index-overflow guard in the mesher (H-04) all go to L1-H.
+The two measured performance gaps go to the simulation and world owners: light seeding plus
+`stitchBoundaries()` at ~45 ms/chunk (H-05, D-043) to L1-I with a 15 ms/chunk target, and the
+vitest-level `chunkGen` average of 11.1 ms against the 4 ms budget (H-06) to L1-I and L1-F.
+
+## D-049 GitHub Releases stay the canonical download surface (2026-09-16 11:40 JST)
+
+Catbox still answers `Invalid uploader` from GitHub-hosted runner IPs (D-039), so the release asset
+on the GitHub Release remains canonical and byte-verified. For v1.1 the upload is retried once from
+the new runner and, if it fails again, a Litterbox temporary link is published alongside the
+GitHub Release URL and the failure is recorded here rather than blocking the release.
+
+## D-050 v1 gates are mandatory, v2 features are cuttable (2026-09-16 11:40 JST)
+
+Every merge into `integration/mc-20260916` re-runs the full gate: `pnpm -r exec tsc --noEmit`,
+`pnpm -r lint`, `pnpm -r test`, `pnpm build`, `pnpm test:e2e`, `pnpm bench` and
+`scripts/report-size.sh`. If the schedule runs short, v2 items are dropped in this order:
+particle expansion, village generation, breeding, enchanting, the Nether, multiplayer. World
+generation, break/place, save/load, crafting and the E2E suite are never reduced.
