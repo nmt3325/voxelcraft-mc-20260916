@@ -151,3 +151,6 @@ export function createAudio(options: CreateAudioOptions): AudioHandle {
     },
   }
 }
+
+// Semantic sound events for the v2 systems (portals, enchanting, farming, particles).
+export * from './events'
